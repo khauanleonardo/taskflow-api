@@ -1,33 +1,35 @@
 let usuarios = [
-  { id: 1, nome: 'Ana', email: 'ana@email.com' },
-  { id: 2, nome: 'Bruno', email: 'bruno@email.com' }
+  { id: 1, nome: 'Alice', email: 'alice@email.com', senha: '123456' }
 ];
-let proximoId = 3;
 
-module.exports = {
-  listar: () => usuarios,
-
-  buscar: (id) => usuarios.find(u => u.id === id),
-
-  buscarPorEmail: (email) => 
-    usuarios.find(u => u.email.toLowerCase() === email.toLowerCase()),
-
-  adicionar: ({ nome, email }) => {
-    const novo = { id: proximoId++, nome, email };
+const usuarioModel = {
+  listar: () => usuarios.map(({ senha, ...u }) => u),
+  buscarPorId: (id) => {
+    const u = usuarios.find(u => u.id === Number(id));
+    if (!u) return null;
+    const { senha, ...resto } = u;
+    return resto;
+  },
+  buscarPorEmail: (email) => usuarios.find(u => u.email === email),
+  criar: (dados) => {
+    const novo = { id: usuarios.length ? Math.max(...usuarios.map(u => u.id)) + 1 : 1, ...dados };
     usuarios.push(novo);
-    return novo;
+    const { senha, ...resto } = novo;
+    return resto;
   },
-
   atualizar: (id, dados) => {
-    const idx = usuarios.findIndex(u => u.id === id);
+    const idx = usuarios.findIndex(u => u.id === Number(id));
     if (idx === -1) return null;
-    usuarios[idx] = { ...usuarios[idx], ...dados, id };
-    return usuarios[idx];
+    usuarios[idx] = { ...usuarios[idx], ...dados };
+    const { senha, ...resto } = usuarios[idx];
+    return resto;
   },
-
   remover: (id) => {
-    const idx = usuarios.findIndex(u => u.id === id);
-    if (idx === -1) return null;
-    return usuarios.splice(idx, 1)[0];
+    const idx = usuarios.findIndex(u => u.id === Number(id));
+    if (idx === -1) return false;
+    usuarios.splice(idx, 1);
+    return true;
   }
 };
+
+module.exports = usuarioModel;
