@@ -6,6 +6,7 @@ const cors = require('cors');
 const logger = require('./src/middlewares/logger');
 const validarContentType = require('./src/middlewares/validarContentType');
 const temporizador = require('./src/middlewares/temporizador');
+const autenticar = require('./src/middlewares/autenticar');
 
 const authRoutes = require('./src/routes/auth.routes');
 const tarefasRoutes = require('./src/routes/tarefas.routes');
@@ -29,17 +30,19 @@ app.use(validarContentType);
 app.use(logger);
 app.use(temporizador);
 
-// 3. Rotas Públicas e da API
+// 3. Rota Pública e Auth
 app.get('/', (req, res) => {
   res.json({ status: 'Online', mensagem: 'API TaskFlow rodando!' });
 });
 
 app.use('/auth', authRoutes);
-app.use('/tarefas', tarefasRoutes);
-app.use('/usuarios', usuariosRoutes);
-app.use('/projetos', projetosRoutes);
 
-// 4. Tratamento de Rota Não Encontrada (404)
+// 4. Rotas Protegidas por JWT (Exigem Token)
+app.use('/tarefas', autenticar, tarefasRoutes);
+app.use('/usuarios', autenticar, usuariosRoutes);
+app.use('/projetos', autenticar, projetosRoutes);
+
+// 5. Tratamento de Rota Não Encontrada (404)
 app.use((req, res) => {
   res.status(404).json({ erro: 'Não encontrada' });
 });

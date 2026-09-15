@@ -10,7 +10,13 @@ const tarefasController = {
     res.json(tarefa);
   },
   criar(req, res) {
-    const nova = tarefaModel.criar(req.body);
+    // Junta o corpo da requisição com o ID extraído do token pelo middleware autenticar.js
+    const dados = {
+      ...req.body,
+      usuarioId: req.usuario.id
+    };
+
+    const nova = tarefaModel.criar(dados);
     res.status(201).json(nova);
   },
   atualizar(req, res) {
