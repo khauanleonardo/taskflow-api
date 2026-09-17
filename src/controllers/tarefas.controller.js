@@ -10,10 +10,10 @@ const tarefasController = {
     res.json(tarefa);
   },
   criar(req, res) {
-    // Junta o corpo da requisição com o ID extraído do token pelo middleware autenticar.js
+    // CORRIGIDO: Puxando exatamente a variável criada no autenticar.js
     const dados = {
       ...req.body,
-      usuarioId: req.usuario.id
+      usuarioId: req.usuarioId 
     };
 
     const nova = tarefaModel.criar(dados);

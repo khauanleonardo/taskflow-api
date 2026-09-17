@@ -15,9 +15,12 @@ const authController = {
       return res.status(401).json({ erro: 'Credenciais inválidas' });
     }
 
+    // Adicionado fallback para evitar o erro se o .env falhar
+    const segredo = process.env.JWT_SECRET || 'chave_secreta_taskflow_123';
+
     const token = jwt.sign(
       { id: usuario.id, nome: usuario.nome },
-      process.env.JWT_SECRET,
+      segredo,
       { expiresIn: '8h' }
     );
 

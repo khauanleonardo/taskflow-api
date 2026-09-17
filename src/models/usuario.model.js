@@ -1,5 +1,6 @@
 let usuarios = [
-  { id: 1, nome: 'Alice', email: 'alice@email.com', senha: '123456' }
+  { id: 1, nome: 'Admin', email: 'admin', senha: '1234' },
+  { id: 2, nome: 'Alice', email: 'alice@email.com', senha: '123456' }
 ];
 
 const usuarioModel = {
