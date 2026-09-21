@@ -1,34 +1,29 @@
 const jwt = require('jsonwebtoken');
-const usuarioModel = require('../models/usuario.model');
 
-const authController = {
-  login(req, res) {
-    const { email, senha } = req.body;
+function login(req, res) {
+  const { email, senha } = req.body;
 
-    if (!email || !senha) {
-      return res.status(400).json({ erro: 'Email e senha são obrigatórios' });
-    }
+  const emailValido = email?.startsWith('admin@') || email === 'admin';
+  const senhaValida = senha === '1234' || senha === '123456';
 
-    const usuario = usuarioModel.buscarPorEmail(email);
-
-    if (!usuario || usuario.senha !== senha) {
-      return res.status(401).json({ erro: 'Credenciais inválidas' });
-    }
-
-    // Adicionado fallback para evitar o erro se o .env falhar
-    const segredo = process.env.JWT_SECRET || 'chave_secreta_taskflow_123';
-
-    const token = jwt.sign(
-      { id: usuario.id, nome: usuario.nome },
-      segredo,
-      { expiresIn: '8h' }
-    );
-
-    return res.json({
-      token,
-      usuario: { id: usuario.id, nome: usuario.nome }
-    });
+  if (!emailValido || !senhaValida) {
+    return res.status(401).json({ erro: 'Credenciais inválidas. Use admin@taskflow.com e senha 1234' });
   }
-};
 
-module.exports = authController;
+  const usuario = {
+    id: 1,
+    nome: 'Admin',
+    email: email.includes('@') ? email : 'admin@taskflow.com'
+  };
+
+  const secret = process.env.JWT_SECRET || 'taskflow_chave_secreta_senai_uc12';
+  const token = jwt.sign(usuario, secret, { expiresIn: '8h' });
+
+  return res.json({ token, usuario });
+}
+
+function logout(req, res) {
+  return res.json({ mensagem: 'Logout efetuado com sucesso' });
+}
+
+module.exports = { login, logout };
