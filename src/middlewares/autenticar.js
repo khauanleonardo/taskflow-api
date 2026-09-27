@@ -1,24 +1,26 @@
+// src/middlewares/autenticar.js
 const jwt = require('jsonwebtoken');
 
-function autenticar(req, res, next) {
+module.exports = function autenticar(req, res, next) {
   const authHeader = req.headers['authorization'];
+
   if (!authHeader) {
     return res.status(401).json({ erro: 'Token não fornecido' });
   }
 
-  // Header vem no formato: "Bearer eyJhbG..."
-  const token = authHeader.split(' ')[1];
-  if (!token) {
-    return res.status(401).json({ erro: 'Formato do token inválido' });
+  const partes = authHeader.split(' ');
+  if (partes.length !== 2 || partes[0] !== 'Bearer') {
+    return res.status(401).json({ erro: 'Token malformatado. Use: Bearer <token>' });
   }
 
-  try {
-    const decodificado = jwt.verify(token, process.env.JWT_SECRET || 'taskflow_chave_secreta_senai_uc12');
-    req.usuario = decodificado; // Disponível para os controllers
+  const token = partes[1];
+  const segredo = process.env.JWT_SECRET || 'taskflow_segredo_super_secreto_senai_2026';
+
+  jwt.verify(token, segredo, (err, decoded) => {
+    if (err) {
+      return res.status(401).json({ erro: 'Token inválido ou expirado' });
+    }
+    req.usuario = decoded;
     next();
-  } catch (err) {
-    return res.status(401).json({ erro: 'Token inválido ou expirado' });
-  }
-}
-
-module.exports = autenticar;
+  });
+};

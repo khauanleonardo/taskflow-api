@@ -1,19 +1,24 @@
+// taskflow-api/src/middlewares/schemas.js
 const schemas = {
-  tarefa: {
-    texto: { obrigatorio: true, tipo: 'string' },
-    prioridade: { obrigatorio: false, tipo: 'string', enum: ['alta', 'media', 'baixa'] },
-    coluna: { obrigatorio: false, tipo: 'string', enum: ['afazer', 'andamento', 'concluido'] },
-    usuarioId: { obrigatorio: false, tipo: 'number' },
+  login: {
+    camposObrigatorios: ['email', 'senha']
   },
   usuario: {
-    nome: { obrigatorio: true, tipo: 'string', minLength: 3 },
-    email: { obrigatorio: true, tipo: 'string', formato: 'email' },
-    senha: { obrigatorio: true, tipo: 'string', minLength: 6 },
+    camposObrigatorios: ['nome', 'email', 'senha']
+  },
+  tarefa: {
+    // A validação agora aceita ou 'titulo' ou 'texto'
+    validarPersonalizado: (corpo) => {
+      if (!corpo.titulo?.trim() && !corpo.texto?.trim()) {
+        return 'Título da tarefa é obrigatório';
+      }
+      return null;
+    },
+    camposObrigatorios: []
   },
   projeto: {
-    nome: { obrigatorio: true, tipo: 'string' },
-    descricao: { obrigatorio: false, tipo: 'string', maxLength: 200 },
-  },
+    camposObrigatorios: ['nome']
+  }
 };
 
 module.exports = schemas;
