@@ -13,12 +13,11 @@ const usuariosRoutes = require('./src/routes/usuarios.routes');
 const projetosRoutes = require('./src/routes/projetos.routes');
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || process.env.PORTA || 3001;
 
-// CORS atualizado: aceita localhost, Codespaces e Vercel sem bloquear requisições
+// CORS: aceita localhost, Codespaces e Vercel
 app.use(cors({
   origin: (origin, callback) => {
-    // Permite chamadas sem origin (Postman/mobile) ou de localhost, github.dev e vercel.app
     if (!origin || 
         origin.includes('localhost') || 
         origin.includes('github.dev') || 
@@ -26,7 +25,7 @@ app.use(cors({
         origin.includes('vercel.app')) {
       return callback(null, true);
     }
-    return callback(null, true); // Fallback permissivo para apresentação da UC12
+    return callback(null, true);
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -61,11 +60,12 @@ app.use((err, req, res, next) => {
   res.status(500).json({ erro: 'Erro interno no servidor' });
 });
 
-// Exporta para a Vercel e inicia a porta se for local/Codespaces
-if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
+// Inicia a porta localmente (fora da Vercel)
+if (!process.env.VERCEL) {
   app.listen(PORT, () => {
     console.log(`Servidor TaskFlow rodando na porta ${PORT}`);
   });
 }
 
+// Obrigatório para a Vercel funcionar como Serverless
 module.exports = app;
