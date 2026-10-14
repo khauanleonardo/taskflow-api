@@ -1,133 +1,84 @@
-// src/controllers/tarefas.controller.js
 const tarefaModel = require('../models/tarefa.model');
-const usuarioModel = require('../models/usuario.model');
-const projetoModel = require('../models/projeto.model');
 
-const tarefasController = {
-  listar(req, res) {
-    const { coluna, prioridade, usuarioId, projetoId } = req.query;
-    const tarefas = tarefaModel.listar({ coluna, prioridade, usuarioId, projetoId });
+async function listar(req, res) {
+  try {
+    const tarefas = await tarefaModel.listar(req.query);
     res.json(tarefas);
-  },
+  } catch (err) {
+    console.error('Erro ao listar tarefas:', err.message);
+    res.status(500).json({ erro: 'Erro ao listar tarefas' });
+  }
+}
 
-  buscarPorId(req, res) {
-    const { id } = req.params;
-    const tarefa = tarefaModel.buscarPorId(id);
+async function buscar(req, res) {
+  try {
+    const id = Number(req.params.id);
+    const tarefa = await tarefaModel.buscar(id);
     if (!tarefa) {
       return res.status(404).json({ erro: 'Tarefa não encontrada' });
     }
     res.json(tarefa);
-  },
-
-  criar(req, res) {
-    const { texto, descricao, prioridade, coluna, cidadeUf, usuarioId, projetoId } = req.body;
-
-    // Validação de chaves estrangeiras
-    if (usuarioId && !usuarioModel.buscarPorId(usuarioId)) {
-      return res.status(400).json({ erro: 'usuarioId informado não existe' });
-    }
-    if (projetoId && !projetoModel.buscarPorId(projetoId)) {
-      return res.status(400).json({ erro: 'projetoId informado não existe' });
-    }
-
-    // Regra WIP (Limite de 2 tarefas em andamento por usuário)
-    const colunaAlvo = (coluna || 'afazer').toLowerCase();
-    const idUsuario = usuarioId || req.usuario?.id;
-
-    if (idUsuario && colunaAlvo === 'andamento') {
-      const emAndamento = tarefaModel.contarPorUsuarioEColuna(idUsuario, 'andamento');
-      if (emAndamento >= 2) {
-        return res.status(400).json({
-          erro: 'Limite de 2 tarefas em andamento atingido para este usuário'
-        });
-      }
-    }
-
-    const novaTarefa = tarefaModel.criar({
-      texto,
-      descricao,
-      prioridade,
-      coluna: colunaAlvo,
-      cidadeUf,
-      usuarioId: idUsuario,
-      projetoId
-    });
-
-    res.status(201).json(novaTarefa);
-  },
-
-  atualizar(req, res) {
-    const { id } = req.params;
-    const tarefaExistente = tarefaModel.buscarPorId(id);
-    if (!tarefaExistente) {
-      return res.status(404).json({ erro: 'Tarefa não encontrada' });
-    }
-
-    const { usuarioId, projetoId, coluna } = req.body;
-
-    if (usuarioId && !usuarioModel.buscarPorId(usuarioId)) {
-      return res.status(400).json({ erro: 'usuarioId informado não existe' });
-    }
-    if (projetoId && !projetoModel.buscarPorId(projetoId)) {
-      return res.status(400).json({ erro: 'projetoId informado não existe' });
-    }
-
-    // Regra WIP ao mover para "andamento"
-    const novaColuna = coluna ? coluna.toLowerCase() : tarefaExistente.coluna;
-    const idUsuario = usuarioId || tarefaExistente.usuarioId;
-
-    if (idUsuario && novaColuna === 'andamento' && tarefaExistente.coluna !== 'andamento') {
-      const emAndamento = tarefaModel.contarPorUsuarioEColuna(idUsuario, 'andamento');
-      if (emAndamento >= 2) {
-        return res.status(400).json({
-          erro: 'Limite de 2 tarefas em andamento atingido para este usuário'
-        });
-      }
-    }
-
-    const atualizada = tarefaModel.atualizar(id, req.body);
-    res.json(atualizada);
-  },
-
-  remover(req, res) {
-    const { id } = req.params;
-    const removido = tarefaModel.remover(id);
-    if (!removido) {
-      return res.status(404).json({ erro: 'Tarefa não encontrada' });
-    }
-    res.json({ mensagem: 'Tarefa removida com sucesso' });
-  },
-
-  estatisticas(req, res) {
-    const todas = tarefaModel.listar();
-    const total = todas.length;
-
-    const porColuna = {
-      afazer: todas.filter((t) => t.coluna === 'afazer').length,
-      andamento: todas.filter((t) => t.coluna === 'andamento').length,
-      concluido: todas.filter((t) => t.coluna === 'concluido').length
-    };
-
-    const porPrioridade = {
-      alta: todas.filter((t) => t.prioridade === 'alta').length,
-      media: todas.filter((t) => t.prioridade === 'media').length,
-      baixa: todas.filter((t) => t.prioridade === 'baixa').length
-    };
-
-    res.json({
-      total,
-      porColuna,
-      porPrioridade
-    });
-  },
-
-  resumo(req, res) {
-    const todas = tarefaModel.listar();
-    const concluidas = todas.filter((t) => t.coluna === 'concluido').length;
-    res.json({
-      mensagem: `O TaskFlow possui ${todas.length} tarefas cadastradas, das quais ${concluidas} estão concluídas.`
-    });
+  } catch (err) {
+    console.error('Erro ao buscar tarefa:', err.message);
+    res.status(500).json({ erro: 'Erro ao buscar tarefa' });
   }
-};
+}
 
-module.exports = tarefasController;
+async function criar(req, res) {
+  try {
+    const dados = {
+      ...req.body,
+      usuarioId: req.body.usuarioId || req.body.usuario_id || req.usuario?.id || 1,
+      projetoId: req.body.projetoId || req.body.projeto_id || 1
+    };
+    const nova = await tarefaModel.adicionar(dados);
+    res.status(201).json(nova);
+  } catch (err) {
+    console.error('Erro ao criar tarefa:', err.message);
+    res.status(500).json({ erro: 'Erro ao criar tarefa' });
+  }
+}
+
+async function atualizar(req, res) {
+  try {
+    const id = Number(req.params.id);
+    const atualizada = await tarefaModel.atualizar(id, req.body);
+    if (!atualizada) {
+      return res.status(404).json({ erro: 'Tarefa não encontrada' });
+    }
+    res.json(atualizada);
+  } catch (err) {
+    console.error('Erro ao atualizar tarefa:', err.message);
+    res.status(500).json({ erro: 'Erro ao atualizar tarefa' });
+  }
+}
+
+async function remover(req, res) {
+  try {
+    const id = Number(req.params.id);
+    const removida = await tarefaModel.remover(id);
+    if (!removida) {
+      return res.status(404).json({ erro: 'Tarefa não encontrada' });
+    }
+    res.status(204).send();
+  } catch (err) {
+    console.error('Erro ao remover tarefa:', err.message);
+    res.status(500).json({ erro: 'Erro ao remover tarefa' });
+  }
+}
+
+async function avancar(req, res) {
+  try {
+    const id = Number(req.params.id);
+    const atualizada = await tarefaModel.avancar(id);
+    if (!atualizada) {
+      return res.status(404).json({ erro: 'Tarefa não encontrada' });
+    }
+    res.json(atualizada);
+  } catch (err) {
+    console.error('Erro ao avançar tarefa:', err.message);
+    res.status(500).json({ erro: 'Erro ao avançar tarefa' });
+  }
+}
+
+module.exports = { listar, buscar, criar, atualizar, remover, avancar };

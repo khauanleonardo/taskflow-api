@@ -1,45 +1,42 @@
-// src/models/projeto.model.js
-let projetos = [
-  { id: 1, nome: 'TaskFlow App', descricao: 'Sistema de gestão Kanban para equipes' },
-  { id: 2, nome: 'Website Institucional', descricao: 'Landing page para apresentação do produto' }
-];
-let proximoId = 3;
+const pool = require('../database/db');
 
-const projetoModel = {
-  listar() {
-    return [...projetos];
+module.exports = {
+  listar: async (usuarioId) => {
+    if (usuarioId) {
+      const result = await pool.query('SELECT * FROM projetos WHERE usuario_id = $1 ORDER BY id', [usuarioId]);
+      return result.rows;
+    }
+    const result = await pool.query('SELECT * FROM projetos ORDER BY id');
+    return result.rows;
   },
 
-  buscarPorId(id) {
-    return projetos.find((p) => p.id === Number(id)) || null;
+  buscar: async (id) => {
+    const result = await pool.query('SELECT * FROM projetos WHERE id = $1', [id]);
+    return result.rows[0] || null;
   },
 
-  criar({ nome, descricao }) {
-    const novo = {
-      id: proximoId++,
-      nome: nome.trim(),
-      descricao: descricao ? descricao.trim() : null
-    };
-    projetos.push(novo);
-    return novo;
+  adicionar: async ({ nome, descricao, usuarioId }) => {
+    const result = await pool.query(
+      'INSERT INTO projetos (nome, descricao, usuario_id) VALUES ($1, $2, $3) RETURNING *',
+      [nome, descricao || null, usuarioId || 1]
+    );
+    return result.rows[0];
   },
 
-  atualizar(id, { nome, descricao }) {
-    const index = projetos.findIndex((p) => p.id === Number(id));
-    if (index === -1) return null;
-
-    if (nome !== undefined) projetos[index].nome = nome.trim();
-    if (descricao !== undefined) projetos[index].descricao = descricao ? descricao.trim() : null;
-
-    return projetos[index];
+  atualizar: async (id, dados) => {
+    const { nome, descricao } = dados;
+    const result = await pool.query(
+      `UPDATE projetos 
+       SET nome = COALESCE($1, nome), descricao = COALESCE($2, descricao) 
+       WHERE id = $3 
+       RETURNING *`,
+      [nome, descricao, id]
+    );
+    return result.rows[0] || null;
   },
 
-  remover(id) {
-    const index = projetos.findIndex((p) => p.id === Number(id));
-    if (index === -1) return false;
-    projetos.splice(index, 1);
-    return true;
+  remover: async (id) => {
+    const result = await pool.query('DELETE FROM projetos WHERE id = $1 RETURNING *', [id]);
+    return result.rows[0] || null;
   }
 };
-
-module.exports = projetoModel;

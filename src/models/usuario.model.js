@@ -1,58 +1,56 @@
-// src/models/usuario.model.js
-let usuarios = [
-  { id: 1, nome: 'Admin', email: 'admin@taskflow.com', senha: '1234' },
-  { id: 2, nome: 'Alice', email: 'alice@email.com', senha: '123456' }
-];
-let proximoId = 3;
+const pool = require('../database/db');
+
+function formatarUsuario(u) {
+  if (!u) return null;
+  return {
+    id: u.id,
+    nome: u.nome,
+    email: u.email,
+    senha: u.senha_hash || u.senha,
+    criado_em: u.criado_em
+  };
+}
 
 const usuarioModel = {
-  listar() {
-    return usuarios.map(({ senha, ...resto }) => resto);
+  buscarPorEmail: async (email) => {
+    try {
+      const result = await pool.query(
+        'SELECT * FROM usuarios WHERE LOWER(email) = LOWER($1)',
+        [email]
+      );
+      if (result.rows.length > 0) {
+        return formatarUsuario(result.rows[0]);
+      }
+      return null;
+    } catch (err) {
+      console.error('Erro ao buscar usuário por email no banco:', err.message);
+      return null;
+    }
   },
 
-  buscarPorId(id) {
-    const user = usuarios.find((u) => u.id === Number(id));
-    if (!user) return null;
-    const { senha, ...resto } = user;
-    return resto;
+  buscarPorId: async (id) => {
+    try {
+      const result = await pool.query(
+        'SELECT * FROM usuarios WHERE id = $1',
+        [id]
+      );
+      return result.rows.length > 0 ? formatarUsuario(result.rows[0]) : null;
+    } catch (err) {
+      console.error('Erro ao buscar usuário por ID:', err.message);
+      return null;
+    }
   },
 
-  buscarPorEmail(email) {
-    return usuarios.find(
-      (u) => u.email.toLowerCase() === String(email).toLowerCase()
-    );
-  },
-
-  criar({ nome, email, senha }) {
-    const novo = {
-      id: proximoId++,
-      nome: nome.trim(),
-      email: email.trim().toLowerCase(),
-      senha: String(senha)
-    };
-    usuarios.push(novo);
-    const { senha: s, ...semSenha } = novo;
-    return semSenha;
-  },
-
-  atualizar(id, { nome, email, senha }) {
-    const index = usuarios.findIndex((u) => u.id === Number(id));
-    if (index === -1) return null;
-
-    if (nome) usuarios[index].nome = nome.trim();
-    if (email) usuarios[index].email = email.trim().toLowerCase();
-    if (senha) usuarios[index].senha = String(senha);
-
-    const { senha: s, ...semSenha } = usuarios[index];
-    return semSenha;
-  },
-
-  remover(id) {
-    const index = usuarios.findIndex((u) => u.id === Number(id));
-    if (index === -1) return false;
-    usuarios.splice(index, 1);
-    return true;
+  listarTodos: async () => {
+    try {
+      const result = await pool.query('SELECT * FROM usuarios ORDER BY id');
+      return result.rows.map(formatarUsuario);
+    } catch (err) {
+      console.error('Erro ao listar usuários do banco:', err.message);
+      return [];
+    }
   }
 };
 
 module.exports = usuarioModel;
+

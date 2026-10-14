@@ -1,107 +1,130 @@
-// taskflow-api/src/models/tarefa.model.js
-let tarefas = [
-  {
-    id: 1,
-    titulo: 'Configurar banco de dados',
-    texto: 'Configurar banco de dados',
-    descricao: 'Criar as tabelas e schemas necessários',
-    prioridade: 'ALTA',
-    coluna: 'A FAZER',
-    cidadeUf: 'São Paulo - SP',
-    endereco: { cep: '01001-000', cidade: 'São Paulo', uf: 'SP', bairro: 'Sé', rua: 'Praça da Sé' },
-    criadaEm: '2026-09-20T10:00:00.000Z'
-  },
-  {
-    id: 2,
-    titulo: 'Desenvolver API REST com MVC',
-    texto: 'Desenvolver API REST com MVC',
-    descricao: 'Separar routes, controllers e models',
-    prioridade: 'ALTA',
-    coluna: 'EM ANDAMENTO',
-    cidadeUf: 'Natal - RN',
-    endereco: { cep: '59000-000', cidade: 'Natal', uf: 'RN', bairro: 'Tirol', rua: 'Av. Hermes da Fonseca' },
-    criadaEm: '2026-09-21T11:00:00.000Z'
-  },
-  {
-    id: 3,
-    titulo: 'Criar componentes React',
-    texto: 'Criar componentes React',
-    descricao: 'Montar tela de login e Kanban',
-    prioridade: 'MEDIA',
-    coluna: 'CONCLUÍDO',
-    cidadeUf: 'Curitiba - PR',
-    endereco: { cep: '80000-000', cidade: 'Curitiba', uf: 'PR', bairro: 'Centro', rua: 'Rua XV de Novembro' },
-    criadaEm: '2026-09-22T09:00:00.000Z'
-  }
-];
-let proximoId = 4;
+const pool = require('../database/db');
 
-function normalizar(col) {
-  if (!col) return 'A FAZER';
-  const c = String(col).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  if (c.includes('fazer')) return 'A FAZER';
-  if (c.includes('andamento')) return 'EM ANDAMENTO';
-  if (c.includes('conclu')) return 'CONCLUÍDO';
-  return col.toUpperCase();
+function normalizarColuna(coluna) {
+  if (!coluna) return 'A FAZER';
+  const c = String(coluna).trim().toLowerCase();
+  if (c === 'todo' || c === 'afazer' || c === 'a fazer') return 'A FAZER';
+  if (c === 'doing' || c === 'andamento' || c === 'em andamento') return 'EM ANDAMENTO';
+  if (c === 'done' || c === 'concluido' || c === 'concluído' || c === 'concluida' || c === 'concluída') return 'CONCLUÍDO';
+  return coluna;
 }
 
-const tarefaModel = {
-  listar(filtros = {}) {
-    let resultado = [...tarefas];
-    if (filtros.coluna) {
-      resultado = resultado.filter((t) => normalizar(t.coluna) === normalizar(filtros.coluna));
+function formatarTarefa(t) {
+  if (!t) return null;
+  return {
+    ...t,
+    titulo: t.texto || t.titulo || '',
+    coluna: normalizarColuna(t.coluna),
+    prioridade: String(t.prioridade || 'MEDIA').toUpperCase(),
+    cidadeUf: t.cidade_uf || (t.cidade && t.uf ? `${t.cidade} - ${t.uf}` : (t.cidade || '')),
+    endereco: {
+      cep: t.cep || '',
+      cidade: t.cidade || '',
+      uf: t.uf || '',
+      bairro: t.bairro || '',
+      rua: t.rua || '',
     }
-    return resultado;
+  };
+}
+
+module.exports = {
+  listar: async (filtros = {}) => {
+    const { coluna, projetoId, usuarioId } = filtros;
+    let query = 'SELECT * FROM tarefas';
+    const condicoes = [];
+    const valores = [];
+
+    if (coluna) {
+      valores.push(coluna);
+      condicoes.push(`coluna = $${valores.length}`);
+    }
+    if (projetoId) {
+      valores.push(projetoId);
+      condicoes.push(`projeto_id = $${valores.length}`);
+    }
+    if (usuarioId) {
+      valores.push(usuarioId);
+      condicoes.push(`usuario_id = $${valores.length}`);
+    }
+
+    if (condicoes.length > 0) {
+      query += ' WHERE ' + condicoes.join(' AND ');
+    }
+
+    query += ' ORDER BY id';
+
+    const result = await pool.query(query, valores);
+    return result.rows.map(formatarTarefa);
   },
 
-  buscarPorId(id) {
-    return tarefas.find((t) => t.id === Number(id)) || null;
+  buscar: async (id) => {
+    const result = await pool.query(
+      'SELECT * FROM tarefas WHERE id = $1',
+      [id]
+    );
+    return formatarTarefa(result.rows[0]) || null;
   },
 
-  criar(dados) {
-    const nomeTarefa = (dados.titulo || dados.texto || '').trim();
-    const nova = {
-      id: proximoId++,
-      titulo: nomeTarefa,
-      texto: nomeTarefa,
-      descricao: dados.descricao ? dados.descricao.trim() : '',
-      prioridade: (dados.prioridade || 'MEDIA').toUpperCase(),
-      coluna: normalizar(dados.coluna),
-      cidadeUf: dados.cidadeUf || '',
-      endereco: dados.endereco || null,
-      criadaEm: new Date().toISOString()
-    };
-    tarefas.push(nova);
-    return nova;
+  adicionar: async (dados) => {
+    const texto = dados.titulo || dados.texto || 'Nova Tarefa';
+    const prioridade = String(dados.prioridade || 'media').toLowerCase();
+    const coluna = normalizarColuna(dados.coluna || 'A FAZER');
+    const usuarioId = dados.usuarioId || dados.usuario_id || 1;
+    const projetoId = dados.projetoId || dados.projeto_id || 1;
+    const descricao = dados.descricao || null;
+    const cidadeUf = dados.cidadeUf || dados.cidade_uf || null;
+    const cep = dados.endereco?.cep || dados.cep || null;
+    const cidade = dados.endereco?.cidade || dados.cidade || null;
+    const uf = dados.endereco?.uf || dados.uf || null;
+    const bairro = dados.endereco?.bairro || dados.bairro || null;
+    const rua = dados.endereco?.rua || dados.rua || null;
+
+    const result = await pool.query(
+      `INSERT INTO tarefas (texto, prioridade, coluna, usuario_id, projeto_id, descricao, cidade_uf, cep, cidade, uf, bairro, rua)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+       RETURNING *`,
+      [texto, prioridade, coluna, usuarioId, projetoId, descricao, cidadeUf, cep, cidade, uf, bairro, rua]
+    );
+    return formatarTarefa(result.rows[0]);
   },
 
-  atualizar(id, dados) {
-    const index = tarefas.findIndex((t) => t.id === Number(id));
-    if (index === -1) return null;
+  atualizar: async (id, dados) => {
+    const atual = await pool.query('SELECT * FROM tarefas WHERE id = $1', [id]);
+    if (atual.rows.length === 0) return null;
 
-    const anterior = tarefas[index];
-    const nomeTarefa = dados.titulo !== undefined ? dados.titulo.trim() : (dados.texto !== undefined ? dados.texto.trim() : anterior.titulo);
+    const row = atual.rows[0];
+    const texto = dados.titulo !== undefined ? dados.titulo : (dados.texto !== undefined ? dados.texto : row.texto);
+    const prioridade = dados.prioridade !== undefined ? String(dados.prioridade).toLowerCase() : row.prioridade;
+    const coluna = dados.coluna !== undefined ? normalizarColuna(dados.coluna) : row.coluna;
+    const usuarioId = dados.usuarioId || dados.usuario_id || row.usuario_id;
+    const projetoId = dados.projetoId || dados.projeto_id || row.projeto_id;
+    const descricao = dados.descricao !== undefined ? dados.descricao : row.descricao;
+    const cidadeUf = dados.cidadeUf !== undefined ? dados.cidadeUf : (dados.cidade_uf !== undefined ? dados.cidade_uf : row.cidade_uf);
+    const cep = dados.endereco?.cep !== undefined ? dados.endereco.cep : (dados.cep !== undefined ? dados.cep : row.cep);
+    const cidade = dados.endereco?.cidade !== undefined ? dados.endereco.cidade : (dados.cidade !== undefined ? dados.cidade : row.cidade);
+    const uf = dados.endereco?.uf !== undefined ? dados.endereco.uf : (dados.uf !== undefined ? dados.uf : row.uf);
+    const bairro = dados.endereco?.bairro !== undefined ? dados.endereco.bairro : (dados.bairro !== undefined ? dados.bairro : row.bairro);
+    const rua = dados.endereco?.rua !== undefined ? dados.endereco.rua : (dados.rua !== undefined ? dados.rua : row.rua);
 
-    tarefas[index] = {
-      ...anterior,
-      titulo: nomeTarefa,
-      texto: nomeTarefa,
-      descricao: dados.descricao !== undefined ? dados.descricao.trim() : anterior.descricao,
-      prioridade: dados.prioridade !== undefined ? dados.prioridade.toUpperCase() : anterior.prioridade,
-      coluna: dados.coluna !== undefined ? normalizar(dados.coluna) : anterior.coluna,
-      cidadeUf: dados.cidadeUf !== undefined ? dados.cidadeUf : anterior.cidadeUf,
-      endereco: dados.endereco !== undefined ? dados.endereco : anterior.endereco
-    };
-
-    return tarefas[index];
+    const result = await pool.query(
+      `UPDATE tarefas 
+       SET texto = $1, prioridade = $2, coluna = $3, usuario_id = $4, projeto_id = $5,
+           descricao = $6, cidade_uf = $7, cep = $8, cidade = $9, uf = $10, bairro = $11, rua = $12
+       WHERE id = $13
+       RETURNING *`,
+      [texto, prioridade, coluna, usuarioId, projetoId, descricao, cidadeUf, cep, cidade, uf, bairro, rua, id]
+    );
+    return formatarTarefa(result.rows[0]);
   },
 
-  remover(id) {
-    const index = tarefas.findIndex((t) => t.id === Number(id));
-    if (index === -1) return false;
-    tarefas.splice(index, 1);
-    return true;
+  remover: async (id) => {
+    const result = await pool.query('DELETE FROM tarefas WHERE id = $1 RETURNING *', [id]);
+    return formatarTarefa(result.rows[0]) || null;
+  },
+
+  avancar: async (id) => {
+    await pool.query('SELECT avancar_tarefa($1)', [id]);
+    const res = await pool.query('SELECT * FROM tarefas WHERE id = $1', [id]);
+    return formatarTarefa(res.rows[0]) || null;
   }
 };
-
-module.exports = tarefaModel;
