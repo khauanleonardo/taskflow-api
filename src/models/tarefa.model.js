@@ -1,130 +1,114 @@
-const pool = require('../database/db');
+const db = require('../database/db');
 
-function normalizarColuna(coluna) {
-  if (!coluna) return 'A FAZER';
-  const c = String(coluna).trim().toLowerCase();
-  if (c === 'todo' || c === 'afazer' || c === 'a fazer') return 'A FAZER';
-  if (c === 'doing' || c === 'andamento' || c === 'em andamento') return 'EM ANDAMENTO';
-  if (c === 'done' || c === 'concluido' || c === 'concluído' || c === 'concluida' || c === 'concluída') return 'CONCLUÍDO';
-  return coluna;
-}
-
-function formatarTarefa(t) {
-  if (!t) return null;
+function formatarTarefa(row) {
+  if (!row) return null;
   return {
-    ...t,
-    titulo: t.texto || t.titulo || '',
-    coluna: normalizarColuna(t.coluna),
-    prioridade: String(t.prioridade || 'MEDIA').toUpperCase(),
-    cidadeUf: t.cidade_uf || (t.cidade && t.uf ? `${t.cidade} - ${t.uf}` : (t.cidade || '')),
-    endereco: {
-      cep: t.cep || '',
-      cidade: t.cidade || '',
-      uf: t.uf || '',
-      bairro: t.bairro || '',
-      rua: t.rua || '',
-    }
+    id: row.id,
+    titulo: row.titulo,
+    descricao: row.descricao || '',
+    status: row.status,
+    prioridade: row.prioridade || 'media',
+    criada_em: row.criada_em,
+    concluida_em: row.concluida_em || null
   };
 }
 
-module.exports = {
-  listar: async (filtros = {}) => {
-    const { coluna, projetoId, usuarioId } = filtros;
-    let query = 'SELECT * FROM tarefas';
+class Tarefa {
+  static async listar(filtros = {}) {
     const condicoes = [];
     const valores = [];
 
-    if (coluna) {
-      valores.push(coluna);
-      condicoes.push(`coluna = $${valores.length}`);
-    }
-    if (projetoId) {
-      valores.push(projetoId);
-      condicoes.push(`projeto_id = $${valores.length}`);
-    }
-    if (usuarioId) {
-      valores.push(usuarioId);
-      condicoes.push(`usuario_id = $${valores.length}`);
+    if (filtros.status) {
+      valores.push(filtros.status);
+      condicoes.push(`status = $${valores.length}`);
     }
 
-    if (condicoes.length > 0) {
-      query += ' WHERE ' + condicoes.join(' AND ');
+    if (filtros.prioridade) {
+      valores.push(filtros.prioridade);
+      condicoes.push(`prioridade = $${valores.length}`);
     }
 
-    query += ' ORDER BY id';
+    if (filtros.busca) {
+      valores.push(`%${filtros.busca}%`);
+      condicoes.push(`(titulo ILIKE $${valores.length} OR descricao ILIKE $${valores.length})`);
+    }
 
-    const result = await pool.query(query, valores);
-    return result.rows.map(formatarTarefa);
-  },
+    const where = condicoes.length > 0 ? `WHERE ${condicoes.join(' AND ')}` : '';
+    const query = `SELECT * FROM tarefas ${where} ORDER BY id ASC`;
 
-  buscar: async (id) => {
-    const result = await pool.query(
-      'SELECT * FROM tarefas WHERE id = $1',
-      [id]
-    );
-    return formatarTarefa(result.rows[0]) || null;
-  },
-
-  adicionar: async (dados) => {
-    const texto = dados.titulo || dados.texto || 'Nova Tarefa';
-    const prioridade = String(dados.prioridade || 'media').toLowerCase();
-    const coluna = normalizarColuna(dados.coluna || 'A FAZER');
-    const usuarioId = dados.usuarioId || dados.usuario_id || 1;
-    const projetoId = dados.projetoId || dados.projeto_id || 1;
-    const descricao = dados.descricao || null;
-    const cidadeUf = dados.cidadeUf || dados.cidade_uf || null;
-    const cep = dados.endereco?.cep || dados.cep || null;
-    const cidade = dados.endereco?.cidade || dados.cidade || null;
-    const uf = dados.endereco?.uf || dados.uf || null;
-    const bairro = dados.endereco?.bairro || dados.bairro || null;
-    const rua = dados.endereco?.rua || dados.rua || null;
-
-    const result = await pool.query(
-      `INSERT INTO tarefas (texto, prioridade, coluna, usuario_id, projeto_id, descricao, cidade_uf, cep, cidade, uf, bairro, rua)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-       RETURNING *`,
-      [texto, prioridade, coluna, usuarioId, projetoId, descricao, cidadeUf, cep, cidade, uf, bairro, rua]
-    );
-    return formatarTarefa(result.rows[0]);
-  },
-
-  atualizar: async (id, dados) => {
-    const atual = await pool.query('SELECT * FROM tarefas WHERE id = $1', [id]);
-    if (atual.rows.length === 0) return null;
-
-    const row = atual.rows[0];
-    const texto = dados.titulo !== undefined ? dados.titulo : (dados.texto !== undefined ? dados.texto : row.texto);
-    const prioridade = dados.prioridade !== undefined ? String(dados.prioridade).toLowerCase() : row.prioridade;
-    const coluna = dados.coluna !== undefined ? normalizarColuna(dados.coluna) : row.coluna;
-    const usuarioId = dados.usuarioId || dados.usuario_id || row.usuario_id;
-    const projetoId = dados.projetoId || dados.projeto_id || row.projeto_id;
-    const descricao = dados.descricao !== undefined ? dados.descricao : row.descricao;
-    const cidadeUf = dados.cidadeUf !== undefined ? dados.cidadeUf : (dados.cidade_uf !== undefined ? dados.cidade_uf : row.cidade_uf);
-    const cep = dados.endereco?.cep !== undefined ? dados.endereco.cep : (dados.cep !== undefined ? dados.cep : row.cep);
-    const cidade = dados.endereco?.cidade !== undefined ? dados.endereco.cidade : (dados.cidade !== undefined ? dados.cidade : row.cidade);
-    const uf = dados.endereco?.uf !== undefined ? dados.endereco.uf : (dados.uf !== undefined ? dados.uf : row.uf);
-    const bairro = dados.endereco?.bairro !== undefined ? dados.endereco.bairro : (dados.bairro !== undefined ? dados.bairro : row.bairro);
-    const rua = dados.endereco?.rua !== undefined ? dados.endereco.rua : (dados.rua !== undefined ? dados.rua : row.rua);
-
-    const result = await pool.query(
-      `UPDATE tarefas 
-       SET texto = $1, prioridade = $2, coluna = $3, usuario_id = $4, projeto_id = $5,
-           descricao = $6, cidade_uf = $7, cep = $8, cidade = $9, uf = $10, bairro = $11, rua = $12
-       WHERE id = $13
-       RETURNING *`,
-      [texto, prioridade, coluna, usuarioId, projetoId, descricao, cidadeUf, cep, cidade, uf, bairro, rua, id]
-    );
-    return formatarTarefa(result.rows[0]);
-  },
-
-  remover: async (id) => {
-    const result = await pool.query('DELETE FROM tarefas WHERE id = $1 RETURNING *', [id]);
-    return formatarTarefa(result.rows[0]) || null;
-  },
-
-  avancar: async (id) => {
-    await pool.query('SELECT avancar_tarefa($1)', [id]);
-    const res = await pool.query('SELECT * FROM tarefas WHERE id = $1', [id]);
-    return formatarTarefa(res.rows[0]) || null;
+    const resultado = await db.query(query, valores);
+    return resultado.rows.map(formatarTarefa);
   }
-};
+
+  static async buscarPorId(id) {
+    const query = 'SELECT * FROM tarefas WHERE id = $1';
+    const resultado = await db.query(query, [id]);
+    if (resultado.rows.length === 0) return null;
+    return formatarTarefa(resultado.rows[0]);
+  }
+
+  static async criar({ titulo, descricao = '', status = 'todo', prioridade = 'media' }) {
+    const query = `
+      INSERT INTO tarefas (titulo, descricao, status, prioridade)
+      VALUES ($1, $2, $3, $4)
+      RETURNING *
+    `;
+    const resultado = await db.query(query, [titulo, descricao, status, prioridade]);
+    return formatarTarefa(resultado.rows[0]);
+  }
+
+  static async atualizar(id, dados) {
+    const campos = [];
+    const valores = [];
+
+    if (dados.titulo !== undefined) {
+      valores.push(dados.titulo);
+      campos.push(`titulo = $${valores.length}`);
+    }
+
+    if (dados.descricao !== undefined) {
+      valores.push(dados.descricao);
+      campos.push(`descricao = $${valores.length}`);
+    }
+
+    if (dados.status !== undefined) {
+      valores.push(dados.status);
+      campos.push(`status = $${valores.length}`);
+    }
+
+    if (dados.prioridade !== undefined) {
+      valores.push(dados.prioridade);
+      campos.push(`prioridade = $${valores.length}`);
+    }
+
+    if (campos.length === 0) {
+      return await this.buscarPorId(id);
+    }
+
+    valores.push(id);
+    const query = `
+      UPDATE tarefas
+      SET ${campos.join(', ')}
+      WHERE id = $${valores.length}
+      RETURNING *
+    `;
+
+    const resultado = await db.query(query, valores);
+    if (resultado.rows.length === 0) return null;
+    return formatarTarefa(resultado.rows[0]);
+  }
+
+  static async remover(id) {
+    const query = 'DELETE FROM tarefas WHERE id = $1 RETURNING id';
+    const resultado = await db.query(query, [id]);
+    return resultado.rowCount > 0;
+  }
+
+  static async avancar(id) {
+    // Chama a Stored Procedure do banco
+    await db.query('CALL avancar_tarefa($1)', [id]);
+    return await this.buscarPorId(id);
+  }
+}
+
+module.exports = Tarefa;

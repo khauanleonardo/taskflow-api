@@ -1,84 +1,124 @@
-const tarefaModel = require('../models/tarefa.model');
+const Tarefa = require('../models/tarefa.model');
+const criarErro = require('../utils/criarErro');
 
-async function listar(req, res) {
+async function listar(req, res, next) {
   try {
-    const tarefas = await tarefaModel.listar(req.query);
-    res.json(tarefas);
+    const tarefas = await Tarefa.listar(req.query);
+    return res.status(200).json(tarefas);
   } catch (err) {
-    console.error('Erro ao listar tarefas:', err.message);
-    res.status(500).json({ erro: 'Erro ao listar tarefas' });
+    return next(err);
   }
 }
 
-async function buscar(req, res) {
+async function buscarPorId(req, res, next) {
   try {
     const id = Number(req.params.id);
-    const tarefa = await tarefaModel.buscar(id);
+
+    // Validação de ID inválido -> 400 Bad Request
+    if (isNaN(id) || !Number.isInteger(id) || id <= 0) {
+      throw criarErro('ID deve ser um número válido', 400);
+    }
+
+    const tarefa = await Tarefa.buscarPorId(id);
+
+    // Tarefa não encontrada -> 404 Not Found
     if (!tarefa) {
-      return res.status(404).json({ erro: 'Tarefa não encontrada' });
+      throw criarErro('Tarefa não encontrada', 404);
     }
-    res.json(tarefa);
+
+    return res.status(200).json(tarefa);
   } catch (err) {
-    console.error('Erro ao buscar tarefa:', err.message);
-    res.status(500).json({ erro: 'Erro ao buscar tarefa' });
+    return next(err);
   }
 }
 
-async function criar(req, res) {
+async function criar(req, res, next) {
   try {
-    const dados = {
-      ...req.body,
-      usuarioId: req.body.usuarioId || req.body.usuario_id || req.usuario?.id || 1,
-      projetoId: req.body.projetoId || req.body.projeto_id || 1
-    };
-    const nova = await tarefaModel.adicionar(dados);
-    res.status(201).json(nova);
+    const { titulo, descricao, status, prioridade } = req.body;
+
+    if (!titulo || typeof titulo !== 'string' || titulo.trim() === '') {
+      throw criarErro('O campo "titulo" é obrigatório', 400);
+    }
+
+    const novaTarefa = await Tarefa.criar({
+      titulo: titulo.trim(),
+      descricao: descricao || '',
+      status: status || 'todo',
+      prioridade: prioridade || 'media'
+    });
+
+    return res.status(201).json(novaTarefa);
   } catch (err) {
-    console.error('Erro ao criar tarefa:', err.message);
-    res.status(500).json({ erro: 'Erro ao criar tarefa' });
+    return next(err);
   }
 }
 
-async function atualizar(req, res) {
+async function atualizar(req, res, next) {
   try {
     const id = Number(req.params.id);
-    const atualizada = await tarefaModel.atualizar(id, req.body);
-    if (!atualizada) {
-      return res.status(404).json({ erro: 'Tarefa não encontrada' });
+
+    if (isNaN(id) || !Number.isInteger(id) || id <= 0) {
+      throw criarErro('ID deve ser um número válido', 400);
     }
-    res.json(atualizada);
+
+    const tarefaAtualizada = await Tarefa.atualizar(id, req.body);
+
+    if (!tarefaAtualizada) {
+      throw criarErro('Tarefa não encontrada para atualização', 404);
+    }
+
+    return res.status(200).json(tarefaAtualizada);
   } catch (err) {
-    console.error('Erro ao atualizar tarefa:', err.message);
-    res.status(500).json({ erro: 'Erro ao atualizar tarefa' });
+    return next(err);
   }
 }
 
-async function remover(req, res) {
+async function remover(req, res, next) {
   try {
     const id = Number(req.params.id);
-    const removida = await tarefaModel.remover(id);
+
+    if (isNaN(id) || !Number.isInteger(id) || id <= 0) {
+      throw criarErro('ID deve ser um número válido', 400);
+    }
+
+    const removida = await Tarefa.remover(id);
+
     if (!removida) {
-      return res.status(404).json({ erro: 'Tarefa não encontrada' });
+      throw criarErro('Tarefa não encontrada para remoção', 404);
     }
-    res.status(204).send();
+
+    return res.status(204).send();
   } catch (err) {
-    console.error('Erro ao remover tarefa:', err.message);
-    res.status(500).json({ erro: 'Erro ao remover tarefa' });
+    return next(err);
   }
 }
 
-async function avancar(req, res) {
+async function avancar(req, res, next) {
   try {
     const id = Number(req.params.id);
-    const atualizada = await tarefaModel.avancar(id);
-    if (!atualizada) {
-      return res.status(404).json({ erro: 'Tarefa não encontrada' });
+
+    if (isNaN(id) || !Number.isInteger(id) || id <= 0) {
+      throw criarErro('ID deve ser um número válido', 400);
     }
-    res.json(atualizada);
+
+    const tarefa = await Tarefa.avancar(id);
+
+    if (!tarefa) {
+      throw criarErro('Tarefa não encontrada para avançar status', 404);
+    }
+
+    return res.status(200).json(tarefa);
   } catch (err) {
-    console.error('Erro ao avançar tarefa:', err.message);
-    res.status(500).json({ erro: 'Erro ao avançar tarefa' });
+    return next(err);
   }
 }
 
-module.exports = { listar, buscar, criar, atualizar, remover, avancar };
+module.exports = {
+  listar,
+  buscarPorId,
+  criar,
+  atualizar,
+  remover,
+  avancar
+};
+
