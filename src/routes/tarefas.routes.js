@@ -1,13 +1,21 @@
-const { Router } = require('express');
-const tarefasController = require('../controllers/tarefas.controller');
+const express = require('express');
+const controller = require('../controllers/tarefas.controller');
+const validar = require('../middlewares/validar.middleware');
+const schemas = require('../schemas/schemas');
 
-const router = Router();
+const router = express.Router();
+const idValido = validar(schemas.id, 'params');
 
-router.get('/', tarefasController.listar);
-router.get('/:id', tarefasController.buscarPorId);
-router.post('/', tarefasController.criar);
-router.put('/:id', tarefasController.atualizar);
-router.delete('/:id', tarefasController.remover);
-router.patch('/:id/avancar', tarefasController.avancar);
+// Listar com validação opcional de query (Desafio Slide 24)
+router.get('/', validar(schemas.filtroTarefas, 'query'), controller.listar);
+
+// Criar tarefa com validação do body
+router.post('/', validar(schemas.tarefa), controller.criar);
+
+// Rotas com ID na URL protegidas com idValido
+router.get('/:id', idValido, controller.buscarPorId);
+router.put('/:id', idValido, validar(schemas.tarefa), controller.atualizar);
+router.delete('/:id', idValido, controller.remover);
+router.patch('/:id/avancar', idValido, controller.avancar);
 
 module.exports = router;

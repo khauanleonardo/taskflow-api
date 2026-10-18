@@ -1,20 +1,17 @@
-function manipuladorDeErros(err, req, res, next) {
-  const status = err.status || 500;
+function tratarErros(erro, req, res, next) {
+  const status = erro.status || 500;
+  console.error('[ERRO]', req.method, req.url, erro.message);
 
-  // Erros 500 não devem vazar detalhes internos para o cliente
   const mensagem = status === 500
-    ? 'Ocorreu um erro interno no servidor.'
-    : (err.message || 'Erro na requisição.');
-
-  if (status === 500) {
-    console.error('❌ [ERRO 500 INTERNO]:', err);
-  }
+    ? 'Erro interno no servidor'
+    : erro.message;
 
   return res.status(status).json({
     erro: {
-      mensagem
+      mensagem,
+      detalhes: erro.detalhes
     }
   });
 }
 
-module.exports = manipuladorDeErros;
+module.exports = tratarErros;

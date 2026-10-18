@@ -3,38 +3,39 @@ const express = require('express');
 const cors = require('cors');
 const db = require('./src/database/db');
 const criarErro = require('./src/utils/criarErro');
-const manipuladorDeErros = require('./src/middlewares/erro.middleware');
+const tratarErros = require('./src/middlewares/erro.middleware');
 
 const tarefasRoutes = require('./src/routes/tarefas.routes');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Middlewares essenciais
+// Middlewares globais
 app.use(cors());
 app.use(express.json());
 
-// Log simples de requisição
+// Log de requisição
 app.use((req, res, next) => {
   console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
   next();
 });
 
-// Rotas da API
+// Rotas da aplicação
 app.use('/tarefas', tarefasRoutes);
 
-// Rota raiz para conferência
+// Rota raiz de teste
 app.get('/', (req, res) => {
   res.json({ mensagem: 'API TaskFlow online' });
 });
 
-// 404 para qualquer rota que não existir
+// 1) Rota 404: nenhuma rota atendeu? Então não existe (Slide 22)
 app.use((req, res, next) => {
-  next(criarErro(`Rota ${req.method} ${req.originalUrl} não encontrada`, 404));
+  const rota = `${req.method} ${req.url}`;
+  throw criarErro(404, `Rota ${rota} não encontrada`);
 });
 
-// Middleware central de tratamento de erros (SEMPRE POR ÚLTIMO)
-app.use(manipuladorDeErros);
+// 2) Middleware central de tratamento de erros (SEMPRE POR ÚLTIMO)
+app.use(tratarErros);
 
 // Teste de conexão com o banco e inicialização do servidor
 db.query('SELECT NOW()')
