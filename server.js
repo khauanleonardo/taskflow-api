@@ -30,23 +30,23 @@ app.get('/', (req, res) => {
   res.json({ mensagem: 'API TaskFlow online' });
 });
 
-// Registro de rotas da aplicação (Slide 22)
+// Registro das rotas principais
 app.use('/auth', authRoutes);
 app.use('/tarefas', tarefasRoutes);
 app.use('/usuarios', usuariosRoutes);
 app.use('/projetos', projetosRoutes);
 app.use('/prioridades', prioridadesRoutes);
 
-// 1) Rota 404: nenhuma rota atendeu? Devolve 404 padronizado em JSON (Slide 12 e 22)
+// Rota 404: nenhuma rota atendeu (Slide 22)
 app.use((req, res, next) => {
   const rota = `${req.method} ${req.url}`;
-  throw criarErro(404, `Rota ${rota} não encontrada`);
+  return next(criarErro(404, `Rota ${rota} não encontrada`));
 });
 
-// 2) Middleware central de tratamento de erros (SEMPRE POR ÚLTIMO)
+// Middleware central de tratamento de erros (SEMPRE POR ÚLTIMO)
 app.use(tratarErros);
 
-// Teste de conexão com o banco e inicialização do servidor
+// Teste de conexão com o banco e inicialização
 db.query('SELECT NOW()')
   .then((res) => {
     console.log(`🚀 TaskFlow API rodando em http://localhost:${PORT}`);

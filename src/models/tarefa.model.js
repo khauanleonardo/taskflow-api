@@ -1,17 +1,35 @@
 const db = require('../database/db');
 
+// Mapeamentos entre o ID numérico do schema e o texto do banco/kanban
+const mapaIdParaTexto = {
+  1: 'baixa',
+  2: 'media',
+  3: 'alta'
+};
+
+const mapaTextoParaId = {
+  baixa: 1,
+  media: 2,
+  alta: 3
+};
+
 function formatarTarefa(row) {
   if (!row) return null;
+
+  const prioridadeTexto = String(row.prioridade || 'media').toLowerCase();
+  const idprioridade = mapaTextoParaId[prioridadeTexto] || (Number(row.idprioridade) || 2);
+
   return {
     id: row.id,
     texto: row.texto,
-    titulo: row.texto, // compatibilidade com Kanban
+    titulo: row.texto,
     coluna: row.coluna,
-    status: row.coluna, // compatibilidade com Kanban
+    status: row.coluna,
     ordem: row.ordem || 0,
     usuario_id: row.usuario_id,
     projeto_id: row.projeto_id,
-    prioridade: row.prioridade || 'media',
+    idprioridade,
+    prioridade: prioridadeTexto,
     descricao: row.descricao || '',
     criado_em: row.criado_em,
     concluida_em: row.concluida_em || null,
@@ -62,11 +80,17 @@ class Tarefa {
 
   static async criar(dados) {
     const texto = dados.texto || dados.titulo || 'Nova Tarefa';
-    const coluna = dados.coluna || dados.status || 'todo';
+    const coluna = dados.coluna || dados.status || 'afazer';
     const usuario_id = Number(dados.usuario_id || dados.usuarioId || 1);
     const projeto_id = Number(dados.projeto_id || dados.projetoId || 1);
-    const prioridade = String(dados.prioridade || 'media').toLowerCase();
     const descricao = dados.descricao || '';
+
+    let prioridade = 'media';
+    if (dados.idprioridade !== undefined) {
+      prioridade = mapaIdParaTexto[Number(dados.idprioridade)] || 'media';
+    } else if (dados.prioridade !== undefined) {
+      prioridade = String(dados.prioridade).toLowerCase();
+    }
 
     const query = `
       INSERT INTO tarefas (texto, coluna, usuario_id, projeto_id, prioridade, descricao)
@@ -74,7 +98,14 @@ class Tarefa {
       RETURNING *
     `;
 
-    const resultado = await db.query(query, [texto, coluna, usuario_id, projeto_id, prioridade, descricao]);
+    const resultado = await db.query(query, [
+      texto,
+      coluna,
+      usuario_id,
+      projeto_id,
+      prioridade,
+      descricao
+    ]);
     return formatarTarefa(resultado.rows[0]);
   }
 
@@ -97,7 +128,11 @@ class Tarefa {
       campos.push(`descricao = $${valores.length}`);
     }
 
-    if (dados.prioridade !== undefined) {
+    if (dados.idprioridade !== undefined) {
+      const textoPrioridade = mapaIdParaTexto[Number(dados.idprioridade)] || 'media';
+      valores.push(textoPrioridade);
+      campos.push(`prioridade = $${valores.length}`);
+    } else if (dados.prioridade !== undefined) {
       valores.push(String(dados.prioridade).toLowerCase());
       campos.push(`prioridade = $${valores.length}`);
     }
@@ -141,7 +176,7 @@ class Tarefa {
   }
 }
 
-// Aliases para máxima compatibilidade
+// Aliases de compatibilidade
 Tarefa.adicionar = Tarefa.criar;
 Tarefa.excluir = Tarefa.remover;
 
