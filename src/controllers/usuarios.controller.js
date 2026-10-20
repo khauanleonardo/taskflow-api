@@ -1,58 +1,72 @@
-// src/controllers/usuarios.controller.js
 const usuarioModel = require('../models/usuario.model');
-const tarefaModel = require('../models/tarefa.model');
+const Tarefa = require('../models/tarefa.model');
+const criarErro = require('../utils/criarErro');
 
 const usuariosController = {
-  listar(req, res) {
-    res.json(usuarioModel.listar());
+  async listar(req, res, next) {
+    try {
+      const usuarios = await usuarioModel.listar();
+      return res.status(200).json(usuarios);
+    } catch (err) {
+      return next(err);
+    }
   },
 
-  buscarPorId(req, res) {
-    const { id } = req.params;
-    const usuario = usuarioModel.buscarPorId(id);
-    if (!usuario) {
-      return res.status(404).json({ erro: 'Usuário não encontrado' });
+  async buscarPorId(req, res, next) {
+    try {
+      const id = Number(req.params.id);
+      const usuario = await usuarioModel.buscarPorId(id);
+      if (!usuario) {
+        return next(criarErro(404, 'Usuário não encontrado'));
+      }
+      return res.status(200).json(usuario);
+    } catch (err) {
+      return next(err);
     }
-    res.json(usuario);
   },
 
-  criar(req, res) {
-    const { nome, email, senha } = req.body;
-
-    const existente = usuarioModel.buscarPorEmail(email);
-    if (existente) {
-      return res.status(400).json({ erro: 'E-mail já cadastrado no sistema' });
+  async criar(req, res, next) {
+    try {
+      const { nome, email, senha } = req.body;
+      const existente = await usuarioModel.buscarPorEmail(email);
+      if (existente) {
+        return next(criarErro(400, 'E-mail já cadastrado no sistema'));
+      }
+      const novo = await usuarioModel.criar({ nome, email, senha });
+      return res.status(201).json(novo);
+    } catch (err) {
+      return next(err);
     }
-
-    const novo = usuarioModel.criar({ nome, email, senha });
-    res.status(201).json(novo);
   },
 
-  atualizar(req, res) {
-    const { id } = req.params;
-    const atualizado = usuarioModel.atualizar(id, req.body);
-    if (!atualizado) {
-      return res.status(404).json({ erro: 'Usuário não encontrado' });
+  async atualizar(req, res, next) {
+    try {
+      const id = Number(req.params.id);
+      const atualizado = await usuarioModel.atualizar(id, req.body);
+      if (!atualizado) {
+        return next(criarErro(404, 'Usuário não encontrado'));
+      }
+      return res.status(200).json(atualizado);
+    } catch (err) {
+      return next(err);
     }
-    res.json(atualizado);
   },
 
-  remover(req, res) {
-    const { id } = req.params;
-
-    // Regra de dependência: impede deletar se o usuário tiver tarefas
-    const tarefasDoUsuario = tarefaModel.listar({ usuarioId: id });
-    if (tarefasDoUsuario.length > 0) {
-      return res.status(400).json({
-        erro: 'Não é possível excluir usuário com tarefas vinculadas'
-      });
+  async remover(req, res, next) {
+    try {
+      const id = Number(req.params.id);
+      const tarefasDoUsuario = await Tarefa.listar({ usuarioId: id });
+      if (tarefasDoUsuario && tarefasDoUsuario.length > 0) {
+        return next(criarErro(400, 'Não é possível excluir usuário com tarefas vinculadas'));
+      }
+      const removido = await usuarioModel.remover(id);
+      if (!removido) {
+        return next(criarErro(404, 'Usuário não encontrado'));
+      }
+      return res.status(204).send();
+    } catch (err) {
+      return next(err);
     }
-
-    const removido = usuarioModel.remover(id);
-    if (!removido) {
-      return res.status(404).json({ erro: 'Usuário não encontrado' });
-    }
-    res.json({ mensagem: 'Usuário removido com sucesso' });
   }
 };
 

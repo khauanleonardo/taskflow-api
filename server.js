@@ -5,7 +5,12 @@ const db = require('./src/database/db');
 const criarErro = require('./src/utils/criarErro');
 const tratarErros = require('./src/middlewares/erro.middleware');
 
+// Rotas da aplicação
 const tarefasRoutes = require('./src/routes/tarefas.routes');
+const usuariosRoutes = require('./src/routes/usuarios.routes');
+const projetosRoutes = require('./src/routes/projetos.routes');
+const prioridadesRoutes = require('./src/routes/prioridades.routes');
+const authRoutes = require('./src/routes/auth.routes');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -20,15 +25,19 @@ app.use((req, res, next) => {
   next();
 });
 
-// Rotas da aplicação
-app.use('/tarefas', tarefasRoutes);
-
 // Rota raiz de teste
 app.get('/', (req, res) => {
   res.json({ mensagem: 'API TaskFlow online' });
 });
 
-// 1) Rota 404: nenhuma rota atendeu? Então não existe (Slide 22)
+// Registro de rotas da aplicação (Slide 22)
+app.use('/auth', authRoutes);
+app.use('/tarefas', tarefasRoutes);
+app.use('/usuarios', usuariosRoutes);
+app.use('/projetos', projetosRoutes);
+app.use('/prioridades', prioridadesRoutes);
+
+// 1) Rota 404: nenhuma rota atendeu? Devolve 404 padronizado em JSON (Slide 12 e 22)
 app.use((req, res, next) => {
   const rota = `${req.method} ${req.url}`;
   throw criarErro(404, `Rota ${rota} não encontrada`);

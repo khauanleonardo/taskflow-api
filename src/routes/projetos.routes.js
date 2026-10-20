@@ -1,19 +1,16 @@
-// src/routes/projetos.routes.js
 const express = require('express');
 const router = express.Router();
-const projetosController = require('../controllers/projetos.controller');
-const validar = require('../middlewares/validar');
-const schemas = require('../middlewares/schemas');
-const autenticar = require('../middlewares/autenticar');
+const controller = require('../controllers/projetos.controller');
+const validar = require('../middlewares/validar.middleware');
+const schemas = require('../schemas/schemas');
 
-// Rota específica de resumo antes de :id
-router.get('/:id/resumo', projetosController.resumo);
+const idValido = validar(schemas.id, 'params');
 
-// CRUD
-router.get('/', projetosController.listar);
-router.get('/:id', projetosController.buscarPorId);
-router.post('/', autenticar, validar(schemas.projeto), projetosController.criar);
-router.put('/:id', autenticar, projetosController.atualizar);
-router.delete('/:id', autenticar, projetosController.remover);
+router.get('/:id/resumo', idValido, controller.resumo);
+router.get('/', controller.listar);
+router.get('/:id', idValido, controller.buscarPorId);
+router.post('/', validar(schemas.projeto), controller.criar);
+router.put('/:id', idValido, validar(schemas.projeto), controller.atualizar);
+router.delete('/:id', idValido, controller.remover);
 
 module.exports = router;
