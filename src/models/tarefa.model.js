@@ -1,23 +1,31 @@
 const db = require('../database/db');
 
-// Mapeamentos entre o ID numérico do schema e o texto do banco/kanban
+// Mapeamento completo incluindo Urgente (ID 4)
 const mapaIdParaTexto = {
   1: 'baixa',
   2: 'media',
-  3: 'alta'
+  3: 'alta',
+  4: 'urgente'
 };
 
 const mapaTextoParaId = {
   baixa: 1,
+  baixo: 1,
   media: 2,
-  alta: 3
+  medio: 2,
+  média: 2,
+  médio: 2,
+  alta: 3,
+  alto: 3,
+  urgente: 4
 };
 
 function formatarTarefa(row) {
   if (!row) return null;
 
-  const prioridadeTexto = String(row.prioridade || 'media').toLowerCase();
-  const idprioridade = mapaTextoParaId[prioridadeTexto] || (Number(row.idprioridade) || 2);
+  const prioridadeTexto = String(row.prioridade || '').toLowerCase();
+  const idprioridade = Number(row.idprioridade) || mapaTextoParaId[prioridadeTexto] || 2;
+  const textoFinal = mapaIdParaTexto[idprioridade] || prioridadeTexto || 'media';
 
   return {
     id: row.id,
@@ -29,16 +37,10 @@ function formatarTarefa(row) {
     usuario_id: row.usuario_id,
     projeto_id: row.projeto_id,
     idprioridade,
-    prioridade: prioridadeTexto,
+    prioridade: textoFinal,
     descricao: row.descricao || '',
     criado_em: row.criado_em,
-    concluida_em: row.concluida_em || null,
-    cidade_uf: row.cidade_uf || null,
-    cep: row.cep || null,
-    cidade: row.cidade || null,
-    uf: row.uf || null,
-    bairro: row.bairro || null,
-    rua: row.rua || null
+    concluida_em: row.concluida_em || null
   };
 }
 
@@ -57,11 +59,6 @@ class Tarefa {
     if (coluna) {
       valores.push(coluna);
       condicoes.push(`coluna = $${valores.length}`);
-    }
-
-    if (filtros.prioridade) {
-      valores.push(filtros.prioridade);
-      condicoes.push(`prioridade = $${valores.length}`);
     }
 
     const where = condicoes.length > 0 ? `WHERE ${condicoes.join(' AND ')}` : '';
@@ -85,28 +82,49 @@ class Tarefa {
     const projeto_id = Number(dados.projeto_id || dados.projetoId || 1);
     const descricao = dados.descricao || '';
 
-    let prioridade = 'media';
-    if (dados.idprioridade !== undefined) {
-      prioridade = mapaIdParaTexto[Number(dados.idprioridade)] || 'media';
-    } else if (dados.prioridade !== undefined) {
-      prioridade = String(dados.prioridade).toLowerCase();
+    // Trata idprioridade e texto da prioridade
+    let idprioridade = 2;
+    if (dados.idprioridade !== undefined && dados.idprioridade !== null) {
+      idprioridade = Number(dados.idprioridade);
+    } else if (dados.prioridade) {
+      idprioridade = mapaTextoParaId[String(dados.prioridade).toLowerCase()] || 2;
     }
+    const prioridadeTexto = mapaIdParaTexto[idprioridade] || 'media';
 
-    const query = `
-      INSERT INTO tarefas (texto, coluna, usuario_id, projeto_id, prioridade, descricao)
-      VALUES ($1, $2, $3, $4, $5, $6)
-      RETURNING *
-    `;
-
-    const resultado = await db.query(query, [
-      texto,
-      coluna,
-      usuario_id,
-      projeto_id,
-      prioridade,
-      descricao
-    ]);
-    return formatarTarefa(resultado.rows[0]);
+    // Grava tanto idprioridade quanto prioridade com fallback automático
+    try {
+      const queryComFk = `
+        INSERT INTO tarefas (texto, coluna, usuario_id, projeto_id, prioridade, idprioridade, descricao)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        RETURNING *
+      `;
+      const resultado = await db.query(queryComFk, [
+        texto,
+        coluna,
+        usuario_id,
+        projeto_id,
+        prioridadeTexto,
+        idprioridade,
+        descricao
+      ]);
+      return formatarTarefa(resultado.rows[0]);
+    } catch (erroFk) {
+      // Fallback caso a coluna idprioridade não exista na tabela local
+      const querySimples = `
+        INSERT INTO tarefas (texto, coluna, usuario_id, projeto_id, prioridade, descricao)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING *
+      `;
+      const resultado = await db.query(querySimples, [
+        texto,
+        coluna,
+        usuario_id,
+        projeto_id,
+        prioridadeTexto,
+        descricao
+      ]);
+      return formatarTarefa(resultado.rows[0]);
+    }
   }
 
   static async atualizar(id, dados) {
@@ -128,12 +146,18 @@ class Tarefa {
       campos.push(`descricao = $${valores.length}`);
     }
 
-    if (dados.idprioridade !== undefined) {
-      const textoPrioridade = mapaIdParaTexto[Number(dados.idprioridade)] || 'media';
+    if (dados.idprioridade !== undefined && dados.idprioridade !== null) {
+      const idNum = Number(dados.idprioridade);
+      const textoPrioridade = mapaIdParaTexto[idNum] || 'media';
+
+      valores.push(idNum);
+      campos.push(`idprioridade = $${valores.length}`);
+
       valores.push(textoPrioridade);
       campos.push(`prioridade = $${valores.length}`);
     } else if (dados.prioridade !== undefined) {
-      valores.push(String(dados.prioridade).toLowerCase());
+      const pStr = String(dados.prioridade).toLowerCase();
+      valores.push(pStr);
       campos.push(`prioridade = $${valores.length}`);
     }
 
@@ -159,9 +183,23 @@ class Tarefa {
       RETURNING *
     `;
 
-    const resultado = await db.query(query, valores);
-    if (resultado.rows.length === 0) return null;
-    return formatarTarefa(resultado.rows[0]);
+    try {
+      const resultado = await db.query(query, valores);
+      if (resultado.rows.length === 0) return null;
+      return formatarTarefa(resultado.rows[0]);
+    } catch (errUpdate) {
+      // Se falhar por causa do campo idprioridade na query UPDATE, tenta sem ele
+      const camposSemFk = campos.filter((c) => !c.startsWith('idprioridade'));
+      const querySemFk = `
+        UPDATE tarefas
+        SET ${camposSemFk.join(', ')}
+        WHERE id = $${valores.length}
+        RETURNING *
+      `;
+      const resultado = await db.query(querySemFk, valores);
+      if (resultado.rows.length === 0) return null;
+      return formatarTarefa(resultado.rows[0]);
+    }
   }
 
   static async remover(id) {
@@ -169,14 +207,8 @@ class Tarefa {
     const resultado = await db.query(query, [id]);
     return resultado.rowCount > 0;
   }
-
-  static async avancar(id) {
-    await db.query('SELECT avancar_tarefa($1)', [id]);
-    return await this.buscarPorId(id);
-  }
 }
 
-// Aliases de compatibilidade
 Tarefa.adicionar = Tarefa.criar;
 Tarefa.excluir = Tarefa.remover;
 

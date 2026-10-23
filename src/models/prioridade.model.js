@@ -1,9 +1,10 @@
 const db = require('../database/db');
 
 const prioridadesPadrao = [
-  { id: 1, nome: 'Baixa', descricao: 'Baixo' },
-  { id: 2, nome: 'Média', descricao: 'Médio' },
-  { id: 3, nome: 'Alta', descricao: 'Alto' }
+  { id: 1, nome: 'Baixa', descricao: 'Baixo', cor: '#10b981' },
+  { id: 2, nome: 'Média', descricao: 'Médio', cor: '#f59e0b' },
+  { id: 3, nome: 'Alta', descricao: 'Alto', cor: '#ef4444' },
+  { id: 4, nome: 'Urgente', descricao: 'Urgente', cor: '#a855f7' }
 ];
 
 function formatarPrioridade(p) {
@@ -12,34 +13,24 @@ function formatarPrioridade(p) {
   return {
     id: p.id,
     nome: p.nome || texto,
-    descricao: p.descricao || texto
+    descricao: texto,
+    cor: p.cor || (p.id === 4 ? '#a855f7' : p.id === 3 ? '#ef4444' : p.id === 1 ? '#10b981' : '#f59e0b')
   };
 }
 
 const prioridadeModel = {
-  async inicializarTabela() {
-    try {
-      await db.query(`
-        CREATE TABLE IF NOT EXISTS prioridades (
-          id SERIAL PRIMARY KEY,
-          nome VARCHAR(50) NOT NULL
-        )
-      `);
-      const { rows } = await db.query('SELECT COUNT(*) FROM prioridades');
-      if (Number(rows[0].count) === 0) {
-        await db.query(`
-          INSERT INTO prioridades (nome) VALUES ('Baixo'), ('Médio'), ('Alto')
-        `);
-      }
-    } catch (err) {
-      // Ignora erro se não tiver permissão DDL
-    }
-  },
-
   async listar() {
     try {
       const resultado = await db.query('SELECT * FROM prioridades ORDER BY id ASC');
-      return resultado.rows.map(formatarPrioridade);
+      if (resultado.rows.length === 0) return prioridadesPadrao;
+
+      // Garante que Urgente (id 4) exista na lista se a tabela só tiver 3 registros antigos
+      const lista = resultado.rows.map(formatarPrioridade);
+      const temUrgente = lista.some((p) => p.id === 4 || String(p.nome).toLowerCase().includes('urg'));
+      if (!temUrgente) {
+        lista.push({ id: 4, nome: 'Urgente', descricao: 'Urgente', cor: '#a855f7' });
+      }
+      return lista;
     } catch (err) {
       return prioridadesPadrao;
     }
@@ -57,58 +48,21 @@ const prioridadeModel = {
     }
   },
 
-  async criar({ nome, descricao }) {
+  async criar({ nome, descricao, cor }) {
     const valor = descricao || nome || 'Normal';
     try {
       const resultado = await db.query(
-        'INSERT INTO prioridades (nome) VALUES ($1) RETURNING *',
-        [valor]
+        'INSERT INTO prioridades (nome, descricao, cor) VALUES ($1, $2, $3) RETURNING *',
+        [valor, valor, cor || '#a855f7']
       );
       return formatarPrioridade(resultado.rows[0]);
     } catch (err) {
       const novoId = prioridadesPadrao.length + 1;
-      const novo = { id: novoId, nome: valor, descricao: valor };
+      const novo = { id: novoId, nome: valor, descricao: valor, cor: cor || '#a855f7' };
       prioridadesPadrao.push(novo);
       return novo;
     }
-  },
-
-  async atualizar(id, { nome, descricao }) {
-    const valor = descricao || nome;
-    try {
-      const resultado = await db.query(
-        'UPDATE prioridades SET nome = $1 WHERE id = $2 RETURNING *',
-        [valor, id]
-      );
-      return resultado.rows.length > 0 ? formatarPrioridade(resultado.rows[0]) : null;
-    } catch (err) {
-      const item = prioridadesPadrao.find((p) => p.id === Number(id));
-      if (item) {
-        item.nome = valor;
-        item.descricao = valor;
-      }
-      return item ? formatarPrioridade(item) : null;
-    }
-  },
-
-  async remover(id) {
-    try {
-      const resultado = await db.query(
-        'DELETE FROM prioridades WHERE id = $1 RETURNING id',
-        [id]
-      );
-      return resultado.rowCount > 0;
-    } catch (err) {
-      const idx = prioridadesPadrao.findIndex((p) => p.id === Number(id));
-      if (idx !== -1) {
-        prioridadesPadrao.splice(idx, 1);
-        return true;
-      }
-      return false;
-    }
   }
 };
-
-prioridadeModel.inicializarTabela().catch(() => {});
 
 module.exports = prioridadeModel;

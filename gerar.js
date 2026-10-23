@@ -1,0 +1,75 @@
+const fs = require('fs');
+const { execSync } = require('child_process');
+
+if (!fs.existsSync('prisma')) {
+  fs.mkdirSync('prisma');
+}
+
+const schema = `generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model usuarios {
+  id        Int        @id @default(autoincrement())
+  nome      String     @db.VarChar(100)
+  email     String     @unique @db.VarChar(100)
+  senha     String     @db.VarChar(255)
+  criado_em DateTime?  @default(now()) @db.Timestamp(6)
+  projetos  projetos[]
+  tarefas   tarefas[]
+}
+
+model projetos {
+  id          Int       @id @default(autoincrement())
+  nome        String    @db.VarChar(100)
+  descricao   String?
+  id_usuario  Int
+  criado_em   DateTime? @default(now()) @db.Timestamp(6)
+  usuario     usuarios  @relation(fields: [id_usuario], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  tarefas     tarefas[]
+}
+
+model prioridades {
+  id        Int       @id @default(autoincrement())
+  nome      String    @unique @db.VarChar(50)
+  descricao String?   @db.VarChar(255)
+  cor       String?   @db.VarChar(20)
+  ativo     Boolean?  @default(true)
+  tarefas   tarefas[]
+}
+
+model tarefas {
+  id             Int          @id @default(autoincrement())
+  titulo         String       @db.VarChar(150)
+  descricao      String?
+  status         String?      @default("A Fazer") @db.VarChar(50)
+  prioridade     String?      @default("Baixa") @db.VarChar(50)
+  idprioridade   Int?
+  id_projeto     Int
+  id_usuario     Int
+  cep            String?      @db.VarChar(10)
+  logradouro     String?      @db.VarChar(255)
+  bairro         String?      @db.VarChar(100)
+  cidade         String?      @db.VarChar(100)
+  uf             String?      @db.VarChar(2)
+  criado_em      DateTime?    @default(now()) @db.Timestamp(6)
+  atualizado_em  DateTime?    @default(now()) @db.Timestamp(6)
+  
+  projeto        projetos     @relation(fields: [id_projeto], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  usuario        usuarios     @relation(fields: [id_usuario], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  refPrioridade  prioridades? @relation(fields: [idprioridade], references: [id], onDelete: SetNull, onUpdate: NoAction)
+}
+`;
+
+fs.writeFileSync('prisma/schema.prisma', schema, 'utf8');
+console.log('✅ Arquivo prisma/schema.prisma corrigido com sucesso!');
+
+console.log('⏳ Executando npx prisma generate...');
+execSync('npx prisma generate', { stdio: 'inherit' });
+console.log('🚀 Pronto! Agora basta rodar: npm run dev');
