@@ -1,6 +1,6 @@
 const db = require('../database/db');
 
-// Mapeamento completo incluindo Urgente (ID 4)
+// Mapeamentos de segurança entre ID e texto
 const mapaIdParaTexto = {
   1: 'baixa',
   2: 'media',
@@ -35,9 +35,13 @@ function formatarTarefa(row) {
     status: row.coluna,
     ordem: row.ordem || 0,
     usuario_id: row.usuario_id,
+    usuario: row.usuario_nome || (row.usuario_id ? `Usuário #${row.usuario_id}` : 'Sem responsável'),
     projeto_id: row.projeto_id,
+    projeto: row.projeto_nome || (row.projeto_id ? `Projeto #${row.projeto_id}` : 'Geral'),
     idprioridade,
     prioridade: textoFinal,
+    prioridade_rotulo: row.prioridade_nome || prioridadeTexto || 'Média',
+    prioridade_cor: row.prioridade_cor || (idprioridade === 4 ? '#A855F7' : idprioridade === 3 ? '#FF5065' : idprioridade === 1 ? '#41D686' : '#F6C330'),
     descricao: row.descricao || '',
     criado_em: row.criado_em,
     concluida_em: row.concluida_em || null
@@ -52,24 +56,51 @@ class Tarefa {
     const usuarioId = filtros.usuarioId || filtros.usuario_id;
     if (usuarioId) {
       valores.push(Number(usuarioId));
-      condicoes.push(`usuario_id = $${valores.length}`);
+      condicoes.push(`t.usuario_id = $${valores.length}`);
     }
 
     const coluna = filtros.coluna || filtros.status;
     if (coluna) {
       valores.push(coluna);
-      condicoes.push(`coluna = $${valores.length}`);
+      condicoes.push(`t.coluna = $${valores.length}`);
     }
 
     const where = condicoes.length > 0 ? `WHERE ${condicoes.join(' AND ')}` : '';
-    const query = `SELECT * FROM tarefas ${where} ORDER BY id ASC`;
+    
+    // Consulta com LEFT JOIN trazendo nomes e cor do banco (Padrão UC14)
+    const query = `
+      SELECT 
+        t.*,
+        pr.nome AS prioridade_nome,
+        pr.cor AS prioridade_cor,
+        u.nome AS usuario_nome,
+        p.nome AS projeto_nome
+      FROM tarefas t
+      LEFT JOIN prioridades pr ON t.idprioridade = pr.id
+      LEFT JOIN usuarios u ON t.usuario_id = u.id
+      LEFT JOIN projetos p ON t.projeto_id = p.id
+      ${where}
+      ORDER BY t.id ASC
+    `;
 
     const resultado = await db.query(query, valores);
     return resultado.rows.map(formatarTarefa);
   }
 
   static async buscarPorId(id) {
-    const query = 'SELECT * FROM tarefas WHERE id = $1';
+    const query = `
+      SELECT 
+        t.*,
+        pr.nome AS prioridade_nome,
+        pr.cor AS prioridade_cor,
+        u.nome AS usuario_nome,
+        p.nome AS projeto_nome
+      FROM tarefas t
+      LEFT JOIN prioridades pr ON t.idprioridade = pr.id
+      LEFT JOIN usuarios u ON t.usuario_id = u.id
+      LEFT JOIN projetos p ON t.projeto_id = p.id
+      WHERE t.id = $1
+    `;
     const resultado = await db.query(query, [id]);
     if (resultado.rows.length === 0) return null;
     return formatarTarefa(resultado.rows[0]);
@@ -82,7 +113,6 @@ class Tarefa {
     const projeto_id = Number(dados.projeto_id || dados.projetoId || 1);
     const descricao = dados.descricao || '';
 
-    // Trata idprioridade e texto da prioridade
     let idprioridade = 2;
     if (dados.idprioridade !== undefined && dados.idprioridade !== null) {
       idprioridade = Number(dados.idprioridade);
@@ -91,14 +121,14 @@ class Tarefa {
     }
     const prioridadeTexto = mapaIdParaTexto[idprioridade] || 'media';
 
-    // Grava tanto idprioridade quanto prioridade com fallback automático
+    const query = `
+      INSERT INTO tarefas (texto, coluna, usuario_id, projeto_id, prioridade, idprioridade, descricao)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      RETURNING id
+    `;
+    
     try {
-      const queryComFk = `
-        INSERT INTO tarefas (texto, coluna, usuario_id, projeto_id, prioridade, idprioridade, descricao)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
-        RETURNING *
-      `;
-      const resultado = await db.query(queryComFk, [
+      const resInsert = await db.query(query, [
         texto,
         coluna,
         usuario_id,
@@ -107,15 +137,15 @@ class Tarefa {
         idprioridade,
         descricao
       ]);
-      return formatarTarefa(resultado.rows[0]);
-    } catch (erroFk) {
-      // Fallback caso a coluna idprioridade não exista na tabela local
-      const querySimples = `
+      return await this.buscarPorId(resInsert.rows[0].id);
+    } catch (err) {
+      // Fallback caso a constraint ou coluna idprioridade oscile
+      const fallbackQuery = `
         INSERT INTO tarefas (texto, coluna, usuario_id, projeto_id, prioridade, descricao)
         VALUES ($1, $2, $3, $4, $5, $6)
-        RETURNING *
+        RETURNING id
       `;
-      const resultado = await db.query(querySimples, [
+      const resFallback = await db.query(fallbackQuery, [
         texto,
         coluna,
         usuario_id,
@@ -123,7 +153,7 @@ class Tarefa {
         prioridadeTexto,
         descricao
       ]);
-      return formatarTarefa(resultado.rows[0]);
+      return await this.buscarPorId(resFallback.rows[0].id);
     }
   }
 
@@ -180,26 +210,12 @@ class Tarefa {
       UPDATE tarefas
       SET ${campos.join(', ')}
       WHERE id = $${valores.length}
-      RETURNING *
+      RETURNING id
     `;
 
-    try {
-      const resultado = await db.query(query, valores);
-      if (resultado.rows.length === 0) return null;
-      return formatarTarefa(resultado.rows[0]);
-    } catch (errUpdate) {
-      // Se falhar por causa do campo idprioridade na query UPDATE, tenta sem ele
-      const camposSemFk = campos.filter((c) => !c.startsWith('idprioridade'));
-      const querySemFk = `
-        UPDATE tarefas
-        SET ${camposSemFk.join(', ')}
-        WHERE id = $${valores.length}
-        RETURNING *
-      `;
-      const resultado = await db.query(querySemFk, valores);
-      if (resultado.rows.length === 0) return null;
-      return formatarTarefa(resultado.rows[0]);
-    }
+    const resultado = await db.query(query, valores);
+    if (resultado.rows.length === 0) return null;
+    return await this.buscarPorId(id);
   }
 
   static async remover(id) {
