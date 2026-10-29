@@ -1,6 +1,5 @@
-const db = require('../database/db');
+const prisma = require('../database/prisma');
 
-// Mapeamentos de segurança entre ID e texto
 const mapaIdParaTexto = {
   1: 'baixa',
   2: 'media',
@@ -20,90 +19,86 @@ const mapaTextoParaId = {
   urgente: 4
 };
 
-function formatarTarefa(row) {
-  if (!row) return null;
-
-  const prioridadeTexto = String(row.prioridade || '').toLowerCase();
-  const idprioridade = Number(row.idprioridade) || mapaTextoParaId[prioridadeTexto] || 2;
-  const textoFinal = mapaIdParaTexto[idprioridade] || prioridadeTexto || 'media';
+function formatarTarefa(t) {
+  if (!t) return null;
+  const pRef = t.refPrioridade || {};
+  const idPrioridade = t.idprioridade || pRef.id || 2;
+  const prioridadeTexto = mapaIdParaTexto[idPrioridade] || (t.prioridade ? String(t.prioridade).toLowerCase() : 'media');
 
   return {
-    id: row.id,
-    texto: row.texto,
-    titulo: row.texto,
-    coluna: row.coluna,
-    status: row.coluna,
-    ordem: row.ordem || 0,
-    usuario_id: row.usuario_id,
-    usuario: row.usuario_nome || (row.usuario_id ? `Usuário #${row.usuario_id}` : 'Sem responsável'),
-    projeto_id: row.projeto_id,
-    projeto: row.projeto_nome || (row.projeto_id ? `Projeto #${row.projeto_id}` : 'Geral'),
-    idprioridade,
-    prioridade: textoFinal,
-    prioridade_rotulo: row.prioridade_nome || prioridadeTexto || 'Média',
-    prioridade_cor: row.prioridade_cor || (idprioridade === 4 ? '#A855F7' : idprioridade === 3 ? '#FF5065' : idprioridade === 1 ? '#41D686' : '#F6C330'),
-    descricao: row.descricao || '',
-    criado_em: row.criado_em,
-    concluida_em: row.concluida_em || null
+    id: t.id,
+    texto: t.texto,
+    titulo: t.texto,
+    coluna: t.coluna,
+    status: t.coluna,
+    ordem: t.ordem ?? 0,
+    descricao: t.descricao || '',
+    usuario_id: t.usuario_id,
+    usuario: t.usuario?.nome || `Usuário #${t.usuario_id}`,
+    projeto_id: t.projeto_id,
+    projeto: t.projeto?.nome || `Projeto #${t.projeto_id}`,
+    idprioridade: idPrioridade,
+    prioridade: prioridadeTexto,
+    prioridade_rotulo: pRef.nome || pRef.descricao || 'Média',
+    prioridade_cor: pRef.cor || (idPrioridade === 4 ? '#A855F7' : idPrioridade === 3 ? '#FF5065' : idPrioridade === 1 ? '#41D686' : '#F6C330'),
+    criado_em: t.criado_em,
+    iniciada_em: t.iniciada_em || null,
+    concluida_em: t.concluida_em || null
   };
 }
 
+const includePadrao = {
+  refPrioridade: {
+    select: {
+      id: true,
+      nome: true,
+      descricao: true,
+      cor: true
+    }
+  },
+  usuario: {
+    select: {
+      id: true,
+      nome: true
+    }
+  },
+  projeto: {
+    select: {
+      id: true,
+      nome: true
+    }
+  }
+};
+
 class Tarefa {
   static async listar(filtros = {}) {
-    const condicoes = [];
-    const valores = [];
+    const where = {};
 
     const usuarioId = filtros.usuarioId || filtros.usuario_id;
     if (usuarioId) {
-      valores.push(Number(usuarioId));
-      condicoes.push(`t.usuario_id = $${valores.length}`);
+      where.usuario_id = Number(usuarioId);
     }
 
     const coluna = filtros.coluna || filtros.status;
     if (coluna) {
-      valores.push(coluna);
-      condicoes.push(`t.coluna = $${valores.length}`);
+      where.coluna = coluna;
     }
 
-    const where = condicoes.length > 0 ? `WHERE ${condicoes.join(' AND ')}` : '';
-    
-    // Consulta com LEFT JOIN trazendo nomes e cor do banco (Padrão UC14)
-    const query = `
-      SELECT 
-        t.*,
-        pr.nome AS prioridade_nome,
-        pr.cor AS prioridade_cor,
-        u.nome AS usuario_nome,
-        p.nome AS projeto_nome
-      FROM tarefas t
-      LEFT JOIN prioridades pr ON t.idprioridade = pr.id
-      LEFT JOIN usuarios u ON t.usuario_id = u.id
-      LEFT JOIN projetos p ON t.projeto_id = p.id
-      ${where}
-      ORDER BY t.id ASC
-    `;
+    const tarefas = await prisma.tarefas.findMany({
+      where,
+      orderBy: { id: 'asc' },
+      include: includePadrao
+    });
 
-    const resultado = await db.query(query, valores);
-    return resultado.rows.map(formatarTarefa);
+    return tarefas.map(formatarTarefa);
   }
 
   static async buscarPorId(id) {
-    const query = `
-      SELECT 
-        t.*,
-        pr.nome AS prioridade_nome,
-        pr.cor AS prioridade_cor,
-        u.nome AS usuario_nome,
-        p.nome AS projeto_nome
-      FROM tarefas t
-      LEFT JOIN prioridades pr ON t.idprioridade = pr.id
-      LEFT JOIN usuarios u ON t.usuario_id = u.id
-      LEFT JOIN projetos p ON t.projeto_id = p.id
-      WHERE t.id = $1
-    `;
-    const resultado = await db.query(query, [id]);
-    if (resultado.rows.length === 0) return null;
-    return formatarTarefa(resultado.rows[0]);
+    const tarefa = await prisma.tarefas.findUnique({
+      where: { id: Number(id) },
+      include: includePadrao
+    });
+    return formatarTarefa(tarefa);
   }
 
   static async criar(dados) {
@@ -121,107 +116,112 @@ class Tarefa {
     }
     const prioridadeTexto = mapaIdParaTexto[idprioridade] || 'media';
 
-    const query = `
-      INSERT INTO tarefas (texto, coluna, usuario_id, projeto_id, prioridade, idprioridade, descricao)
-      VALUES ($1, $2, $3, $4, $5, $6, $7)
-      RETURNING id
-    `;
-    
-    try {
-      const resInsert = await db.query(query, [
+    const nova = await prisma.tarefas.create({
+      data: {
         texto,
         coluna,
+        ordem: Number(dados.ordem) || 0,
         usuario_id,
         projeto_id,
-        prioridadeTexto,
         idprioridade,
-        descricao
-      ]);
-      return await this.buscarPorId(resInsert.rows[0].id);
-    } catch (err) {
-      // Fallback caso a constraint ou coluna idprioridade oscile
-      const fallbackQuery = `
-        INSERT INTO tarefas (texto, coluna, usuario_id, projeto_id, prioridade, descricao)
-        VALUES ($1, $2, $3, $4, $5, $6)
-        RETURNING id
-      `;
-      const resFallback = await db.query(fallbackQuery, [
-        texto,
-        coluna,
-        usuario_id,
-        projeto_id,
-        prioridadeTexto,
-        descricao
-      ]);
-      return await this.buscarPorId(resFallback.rows[0].id);
-    }
+        prioridade: prioridadeTexto,
+        descricao,
+        iniciada_em: coluna === 'andamento' ? new Date() : null,
+        concluida_em: coluna === 'concluido' ? new Date() : null
+      },
+      include: includePadrao
+    });
+
+    return formatarTarefa(nova);
   }
 
   static async atualizar(id, dados) {
-    const campos = [];
-    const valores = [];
+    const idNum = Number(id);
+    const tarefaAtual = await prisma.tarefas.findUnique({ where: { id: idNum } });
+    if (!tarefaAtual) return null;
+
+    const data = {};
 
     if (dados.texto !== undefined || dados.titulo !== undefined) {
-      valores.push(dados.texto || dados.titulo);
-      campos.push(`texto = $${valores.length}`);
-    }
-
-    if (dados.coluna !== undefined || dados.status !== undefined) {
-      valores.push(dados.coluna || dados.status);
-      campos.push(`coluna = $${valores.length}`);
+      data.texto = dados.texto || dados.titulo;
     }
 
     if (dados.descricao !== undefined) {
-      valores.push(dados.descricao);
-      campos.push(`descricao = $${valores.length}`);
+      data.descricao = dados.descricao;
+    }
+
+    if (dados.coluna !== undefined || dados.status !== undefined) {
+      const novaColuna = dados.coluna || dados.status;
+      data.coluna = novaColuna;
+
+      if (novaColuna === 'concluido') {
+        data.concluida_em = new Date();
+      } else {
+        data.concluida_em = null;
+      }
+
+      if (tarefaAtual.coluna === 'afazer' && novaColuna === 'andamento') {
+        data.iniciada_em = new Date();
+      } else if (tarefaAtual.coluna === 'andamento' && novaColuna === 'afazer') {
+        data.iniciada_em = null;
+      }
     }
 
     if (dados.idprioridade !== undefined && dados.idprioridade !== null) {
-      const idNum = Number(dados.idprioridade);
-      const textoPrioridade = mapaIdParaTexto[idNum] || 'media';
-
-      valores.push(idNum);
-      campos.push(`idprioridade = $${valores.length}`);
-
-      valores.push(textoPrioridade);
-      campos.push(`prioridade = $${valores.length}`);
+      const pId = Number(dados.idprioridade);
+      data.idprioridade = pId;
+      data.prioridade = mapaIdParaTexto[pId] || 'media';
     } else if (dados.prioridade !== undefined) {
       const pStr = String(dados.prioridade).toLowerCase();
-      valores.push(pStr);
-      campos.push(`prioridade = $${valores.length}`);
+      const pId = mapaTextoParaId[pStr] || 2;
+      data.idprioridade = pId;
+      data.prioridade = mapaIdParaTexto[pId] || 'media';
     }
 
     if (dados.usuario_id !== undefined || dados.usuarioId !== undefined) {
-      valores.push(Number(dados.usuario_id || dados.usuarioId));
-      campos.push(`usuario_id = $${valores.length}`);
+      data.usuario_id = Number(dados.usuario_id || dados.usuarioId);
     }
 
     if (dados.projeto_id !== undefined || dados.projetoId !== undefined) {
-      valores.push(Number(dados.projeto_id || dados.projetoId));
-      campos.push(`projeto_id = $${valores.length}`);
+      data.projeto_id = Number(dados.projeto_id || dados.projetoId);
     }
 
-    if (campos.length === 0) {
-      return await this.buscarPorId(id);
+    if (dados.ordem !== undefined) {
+      data.ordem = Number(dados.ordem);
     }
 
-    valores.push(id);
-    const query = `
-      UPDATE tarefas
-      SET ${campos.join(', ')}
-      WHERE id = $${valores.length}
-      RETURNING id
-    `;
+    const atualizada = await prisma.tarefas.update({
+      where: { id: idNum },
+      data,
+      include: includePadrao
+    });
 
-    const resultado = await db.query(query, valores);
-    if (resultado.rows.length === 0) return null;
-    return await this.buscarPorId(id);
+    return formatarTarefa(atualizada);
   }
 
   static async remover(id) {
-    const query = 'DELETE FROM tarefas WHERE id = $1 RETURNING id';
-    const resultado = await db.query(query, [id]);
-    return resultado.rowCount > 0;
+    try {
+      await prisma.tarefas.delete({
+        where: { id: Number(id) }
+      });
+      return true;
+    } catch (err) {
+      if (err.code === 'P2025') return false;
+      throw err;
+    }
+  }
+
+  static async avancar(id) {
+    const tarefa = await this.buscarPorId(id);
+    if (!tarefa) return null;
+
+    const proximaColuna = {
+      afazer: 'andamento',
+      andamento: 'concluido',
+      concluido: 'concluido'
+    }[tarefa.coluna] || 'afazer';
+
+    return await this.atualizar(id, { coluna: proximaColuna });
   }
 }
 

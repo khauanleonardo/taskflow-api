@@ -1,67 +1,63 @@
-const db = require('../database/db');
-
-const prioridadesPadrao = [
-  { id: 1, nome: 'Baixa', descricao: 'Baixo', cor: '#10b981' },
-  { id: 2, nome: 'Média', descricao: 'Médio', cor: '#f59e0b' },
-  { id: 3, nome: 'Alta', descricao: 'Alto', cor: '#ef4444' },
-  { id: 4, nome: 'Urgente', descricao: 'Urgente', cor: '#a855f7' }
-];
+const prisma = require('../database/prisma');
 
 function formatarPrioridade(p) {
   if (!p) return null;
-  const texto = p.descricao || p.nome || 'Médio';
   return {
     id: p.id,
-    nome: p.nome || texto,
-    descricao: texto,
-    cor: p.cor || (p.id === 4 ? '#a855f7' : p.id === 3 ? '#ef4444' : p.id === 1 ? '#10b981' : '#f59e0b')
+    nome: p.nome,
+    descricao: p.descricao || p.nome,
+    cor: p.cor || (p.id === 4 ? '#A855F7' : p.id === 3 ? '#FF5065' : p.id === 1 ? '#41D686' : '#F6C330'),
+    ativo: p.ativo ?? true
   };
 }
 
 const prioridadeModel = {
   async listar() {
-    try {
-      const resultado = await db.query('SELECT * FROM prioridades ORDER BY id ASC');
-      if (resultado.rows.length === 0) return prioridadesPadrao;
-
-      // Garante que Urgente (id 4) exista na lista se a tabela só tiver 3 registros antigos
-      const lista = resultado.rows.map(formatarPrioridade);
-      const temUrgente = lista.some((p) => p.id === 4 || String(p.nome).toLowerCase().includes('urg'));
-      if (!temUrgente) {
-        lista.push({ id: 4, nome: 'Urgente', descricao: 'Urgente', cor: '#a855f7' });
-      }
-      return lista;
-    } catch (err) {
-      return prioridadesPadrao;
-    }
+    const prioridades = await prisma.prioridades.findMany({
+      orderBy: { id: 'asc' }
+    });
+    return prioridades.map(formatarPrioridade);
   },
 
   async buscarPorId(id) {
-    try {
-      const resultado = await db.query('SELECT * FROM prioridades WHERE id = $1', [id]);
-      if (resultado.rows.length > 0) return formatarPrioridade(resultado.rows[0]);
-      const achado = prioridadesPadrao.find((p) => p.id === Number(id));
-      return achado ? formatarPrioridade(achado) : null;
-    } catch (err) {
-      const achado = prioridadesPadrao.find((p) => p.id === Number(id));
-      return achado ? formatarPrioridade(achado) : null;
-    }
+    const p = await prisma.prioridades.findUnique({
+      where: { id: Number(id) }
+    });
+    return formatarPrioridade(p);
   },
 
-  async criar({ nome, descricao, cor }) {
-    const valor = descricao || nome || 'Normal';
-    try {
-      const resultado = await db.query(
-        'INSERT INTO prioridades (nome, descricao, cor) VALUES ($1, $2, $3) RETURNING *',
-        [valor, valor, cor || '#a855f7']
-      );
-      return formatarPrioridade(resultado.rows[0]);
-    } catch (err) {
-      const novoId = prioridadesPadrao.length + 1;
-      const novo = { id: novoId, nome: valor, descricao: valor, cor: cor || '#a855f7' };
-      prioridadesPadrao.push(novo);
-      return novo;
-    }
+  async criar(dados) {
+    const nome = dados.nome || dados.descricao || 'Normal';
+    const nova = await prisma.prioridades.create({
+      data: {
+        nome,
+        descricao: dados.descricao || nome,
+        cor: dados.cor || '#A855F7',
+        ativo: dados.ativo ?? true
+      }
+    });
+    return formatarPrioridade(nova);
+  },
+
+  async atualizar(id, dados) {
+    const data = {};
+    if (dados.nome !== undefined) data.nome = dados.nome;
+    if (dados.descricao !== undefined) data.descricao = dados.descricao;
+    if (dados.cor !== undefined) data.cor = dados.cor;
+    if (dados.ativo !== undefined) data.ativo = dados.ativo;
+
+    const atualizada = await prisma.prioridades.update({
+      where: { id: Number(id) },
+      data
+    });
+    return formatarPrioridade(atualizada);
+  },
+
+  async remover(id) {
+    await prisma.prioridades.delete({
+      where: { id: Number(id) }
+    });
+    return true;
   }
 };
 
