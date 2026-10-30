@@ -19,56 +19,46 @@ const mapaTextoParaId = {
   urgente: 4
 };
 
-function formatarTarefa(t) {
-  if (!t) return null;
-  const pRef = t.refPrioridade || {};
-  const idPrioridade = t.idprioridade || pRef.id || 2;
-  const prioridadeTexto = mapaIdParaTexto[idPrioridade] || (t.prioridade ? String(t.prioridade).toLowerCase() : 'media');
+// Nomes que o front mostra no card. As chaves são as relações do schema.prisma.
+const incluirNomes = {
+  projeto: { select: { nome: true } },
+  usuario: { select: { nome: true } },
+  refPrioridade: { select: { nome: true, descricao: true } }
+};
+
+// Converte o registro do Prisma no formato que a API devolve (o front lê esses campos)
+function formatarTarefa(tarefa) {
+  if (!tarefa) return null;
+  const { projeto, usuario, refPrioridade, ...dados } = tarefa;
 
   return {
-    id: t.id,
-    texto: t.texto,
-    titulo: t.texto,
-    coluna: t.coluna,
-    status: t.coluna,
-    ordem: t.ordem ?? 0,
-    descricao: t.descricao || '',
-    usuario_id: t.usuario_id,
-    usuario: t.usuario?.nome || `Usuário #${t.usuario_id}`,
-    projeto_id: t.projeto_id,
-    projeto: t.projeto?.nome || `Projeto #${t.projeto_id}`,
-    idprioridade: idPrioridade,
-    prioridade: prioridadeTexto,
-    prioridade_rotulo: pRef.nome || pRef.descricao || 'Média',
-    prioridade_cor: pRef.cor || (idPrioridade === 4 ? '#A855F7' : idPrioridade === 3 ? '#FF5065' : idPrioridade === 1 ? '#41D686' : '#F6C330'),
-    criado_em: t.criado_em,
-    iniciada_em: t.iniciada_em || null,
-    concluida_em: t.concluida_em || null
+    id: dados.id,
+    texto: dados.texto,
+    coluna: dados.coluna,
+    ordem: dados.ordem,
+    descricao: dados.descricao || '',
+    usuario_id: dados.usuario_id,
+    usuario: usuario?.nome,
+    projeto_id: dados.projeto_id,
+    projeto: projeto?.nome,
+    idprioridade: dados.idprioridade,
+    prioridade: refPrioridade?.descricao || refPrioridade?.nome || 'Médio',
+    criado_em: dados.criado_em,
+    iniciada_em: dados.iniciada_em,
+    concluida_em: dados.concluida_em
   };
 }
 
-const includePadrao = {
-  refPrioridade: {
-    select: {
-      id: true,
-      nome: true,
-      descricao: true,
-      cor: true
-    }
-  },
-  usuario: {
-    select: {
-      id: true,
-      nome: true
-    }
-  },
-  projeto: {
-    select: {
-      id: true,
-      nome: true
-    }
+// Descobre o id da prioridade a partir do body (idprioridade ou texto legado)
+function prioridadeParaId(dados) {
+  if (dados.idprioridade !== undefined && dados.idprioridade !== null) {
+    return Number(dados.idprioridade) || 2;
   }
-};
+  if (dados.prioridade) {
+    return mapaTextoParaId[String(dados.prioridade).toLowerCase()] || 2;
+  }
+  return 2;
+}
 
 class Tarefa {
   static async listar(filtros = {}) {
@@ -79,6 +69,11 @@ class Tarefa {
       where.usuario_id = Number(usuarioId);
     }
 
+    const projetoId = filtros.projetoId || filtros.projeto_id;
+    if (projetoId) {
+      where.projeto_id = Number(projetoId);
+    }
+
     const coluna = filtros.coluna || filtros.status;
     if (coluna) {
       where.coluna = coluna;
@@ -87,7 +82,7 @@ class Tarefa {
     const tarefas = await prisma.tarefas.findMany({
       where,
       orderBy: { id: 'asc' },
-      include: includePadrao
+      include: incluirNomes
     });
 
     return tarefas.map(formatarTarefa);
@@ -96,49 +91,40 @@ class Tarefa {
   static async buscarPorId(id) {
     const tarefa = await prisma.tarefas.findUnique({
       where: { id: Number(id) },
-      include: includePadrao
+      include: incluirNomes
     });
     return formatarTarefa(tarefa);
   }
 
+  // Dia 8, passo 2: create com data. O id não vai: o banco gera
   static async criar(dados) {
-    const texto = dados.texto || dados.titulo || 'Nova Tarefa';
     const coluna = dados.coluna || dados.status || 'afazer';
-    const usuario_id = Number(dados.usuario_id || dados.usuarioId || 1);
-    const projeto_id = Number(dados.projeto_id || dados.projetoId || 1);
-    const descricao = dados.descricao || '';
-
-    let idprioridade = 2;
-    if (dados.idprioridade !== undefined && dados.idprioridade !== null) {
-      idprioridade = Number(dados.idprioridade);
-    } else if (dados.prioridade) {
-      idprioridade = mapaTextoParaId[String(dados.prioridade).toLowerCase()] || 2;
-    }
-    const prioridadeTexto = mapaIdParaTexto[idprioridade] || 'media';
+    const idprioridade = prioridadeParaId(dados);
 
     const nova = await prisma.tarefas.create({
       data: {
-        texto,
+        texto: dados.texto || dados.titulo || 'Nova Tarefa',
         coluna,
         ordem: Number(dados.ordem) || 0,
-        usuario_id,
-        projeto_id,
+        descricao: dados.descricao || '',
+        usuario_id: Number(dados.usuario_id || dados.usuarioId || 1),
+        projeto_id: Number(dados.projeto_id || dados.projetoId || 1),
         idprioridade,
-        prioridade: prioridadeTexto,
-        descricao,
+        prioridade: mapaIdParaTexto[idprioridade] || 'media',
         iniciada_em: coluna === 'andamento' ? new Date() : null,
         concluida_em: coluna === 'concluido' ? new Date() : null
       },
-      include: includePadrao
+      include: incluirNomes
     });
 
     return formatarTarefa(nova);
   }
 
+  // Dia 8, passo 3: findUnique antes (regras de iniciada_em) e update com where + data
   static async atualizar(id, dados) {
     const idNum = Number(id);
-    const tarefaAtual = await prisma.tarefas.findUnique({ where: { id: idNum } });
-    if (!tarefaAtual) return null;
+    const atual = await prisma.tarefas.findUnique({ where: { id: idNum } });
+    if (!atual) return null; // o controller lança 404
 
     const data = {};
 
@@ -160,22 +146,19 @@ class Tarefa {
         data.concluida_em = null;
       }
 
-      if (tarefaAtual.coluna === 'afazer' && novaColuna === 'andamento') {
+      if (atual.coluna === 'afazer' && novaColuna === 'andamento') {
         data.iniciada_em = new Date();
-      } else if (tarefaAtual.coluna === 'andamento' && novaColuna === 'afazer') {
+      } else if (atual.coluna === 'andamento' && novaColuna === 'afazer') {
         data.iniciada_em = null;
       }
     }
 
     if (dados.idprioridade !== undefined && dados.idprioridade !== null) {
-      const pId = Number(dados.idprioridade);
-      data.idprioridade = pId;
-      data.prioridade = mapaIdParaTexto[pId] || 'media';
+      data.idprioridade = Number(dados.idprioridade);
+      data.prioridade = mapaIdParaTexto[data.idprioridade] || 'media';
     } else if (dados.prioridade !== undefined) {
-      const pStr = String(dados.prioridade).toLowerCase();
-      const pId = mapaTextoParaId[pStr] || 2;
-      data.idprioridade = pId;
-      data.prioridade = mapaIdParaTexto[pId] || 'media';
+      data.idprioridade = mapaTextoParaId[String(dados.prioridade).toLowerCase()] || 2;
+      data.prioridade = mapaIdParaTexto[data.idprioridade] || 'media';
     }
 
     if (dados.usuario_id !== undefined || dados.usuarioId !== undefined) {
@@ -190,24 +173,30 @@ class Tarefa {
       data.ordem = Number(dados.ordem);
     }
 
-    const atualizada = await prisma.tarefas.update({
-      where: { id: idNum },
-      data,
-      include: includePadrao
-    });
-
-    return formatarTarefa(atualizada);
+    try {
+      const atualizada = await prisma.tarefas.update({
+        where: { id: idNum },
+        data,
+        include: incluirNomes
+      });
+      return formatarTarefa(atualizada);
+    } catch (erro) {
+      if (erro.code === 'P2025') return null;
+      throw erro;
+    }
   }
 
+  // Dia 8, passo 4: delete devolve o registro excluído. P2025 vira null (controller: 404)
   static async remover(id) {
     try {
-      await prisma.tarefas.delete({
-        where: { id: Number(id) }
+      const tarefa = await prisma.tarefas.delete({
+        where: { id: Number(id) },
+        include: incluirNomes
       });
-      return true;
-    } catch (err) {
-      if (err.code === 'P2025') return false;
-      throw err;
+      return formatarTarefa(tarefa);
+    } catch (erro) {
+      if (erro.code === 'P2025') return null;
+      throw erro;
     }
   }
 

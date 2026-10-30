@@ -51,10 +51,14 @@ const projetosController = {
   async remover(req, res, next) {
     try {
       const id = Number(req.params.id);
+
+      // O schema usa ON DELETE CASCADE: o banco apagaria as tarefas em silêncio.
+      // Por isso a API confere antes e responde 409.
       const tarefasDoProjeto = await Tarefa.listar({ projetoId: id });
-      if (tarefasDoProjeto && tarefasDoProjeto.length > 0) {
-        return next(criarErro(400, 'Não é possível excluir projeto com tarefas associadas'));
+      if (tarefasDoProjeto.length > 0) {
+        return next(criarErro(409, 'Não é possível excluir projeto com tarefas associadas'));
       }
+
       const removido = await projetoModel.remover(id);
       if (!removido) {
         return next(criarErro(404, 'Projeto não encontrado'));
@@ -74,7 +78,7 @@ const projetosController = {
       }
       const tarefas = await Tarefa.listar({ projetoId: id });
       const total = tarefas.length;
-      const concluidas = tarefas.filter((t) => t.coluna === 'concluido' || t.coluna === 'done').length;
+      const concluidas = tarefas.filter((t) => t.coluna === 'concluido').length;
 
       return res.status(200).json({
         projeto: projeto.nome,

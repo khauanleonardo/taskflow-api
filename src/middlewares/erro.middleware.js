@@ -1,23 +1,23 @@
+const { Prisma } = require('@prisma/client');
 const traduzirErroPrisma = require('../utils/traduzirErroPrisma');
 
+// Middleware central de erros (UC14 - Dia 8, passo 6). Sempre o último do server.js
 function tratarErros(erro, req, res, next) {
-  const erroPrisma = traduzirErroPrisma(erro);
+  if (res.headersSent) return next(erro);
 
-  const status = erroPrisma ? erroPrisma.status : (erro.status || 500);
-  const mensagem = erroPrisma
-    ? erroPrisma.mensagem
-    : (status === 500 ? 'Erro interno no servidor' : erro.message);
-
-  if (status === 500) {
-    console.error('[ERRO 500]', req.method, req.url, erro);
-  } else {
-    console.warn(`[AVISO ${status}]`, req.method, req.url, mensagem);
+  if (erro instanceof Prisma.PrismaClientKnownRequestError) {
+    erro = traduzirErroPrisma(erro, req.method);
   }
+
+  const status = erro.status || 500;
+  const mensagem = status === 500 ? 'Erro interno no servidor' : erro.message;
+
+  console.error('[ERRO]', status, req.method, req.url, erro.message);
 
   return res.status(status).json({
     erro: {
       mensagem,
-      detalhes: erro.detalhes || (erroPrisma ? erro.meta : undefined)
+      detalhes: erro.detalhes
     }
   });
 }

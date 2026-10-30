@@ -1,86 +1,52 @@
 const prisma = require('../database/prisma');
-const pool = require('../database/db');
 
 module.exports = {
-  // EXERCÍCIO SLIDE 28: findMany ordenado por nome
-  listar: async (usuarioId) => {
-    try {
-      const where = usuarioId ? { usuario_id: Number(usuarioId) } : undefined;
-      return await prisma.projetos.findMany({
-        where,
-        orderBy: { nome: 'asc' }
-      });
-    } catch (err) {
-      if (usuarioId) {
-        const result = await pool.query('SELECT * FROM projetos WHERE usuario_id = $1 ORDER BY nome ASC', [Number(usuarioId)]);
-        return result.rows;
-      }
-      const result = await pool.query('SELECT * FROM projetos ORDER BY nome ASC');
-      return result.rows;
-    }
-  },
+  // Dia 7: findMany, ordenado por nome
+  listar: (usuarioId) => prisma.projetos.findMany({
+    where: usuarioId ? { usuario_id: Number(usuarioId) } : undefined,
+    orderBy: { nome: 'asc' }
+  }),
 
-  // EXERCÍCIO SLIDE 28: findUnique pelo id
-  buscar: async (id) => {
-    try {
-      return await prisma.projetos.findUnique({
-        where: { id: Number(id) }
-      });
-    } catch (err) {
-      const result = await pool.query('SELECT * FROM projetos WHERE id = $1', [Number(id)]);
-      return result.rows[0] || null;
-    }
-  },
+  // Dia 7: findUnique pelo id
+  buscar: (id) => prisma.projetos.findUnique({
+    where: { id: Number(id) }
+  }),
 
-  adicionar: async ({ nome, descricao, usuarioId }) => {
-    try {
-      return await prisma.projetos.create({
-        data: {
-          nome,
-          descricao: descricao || null,
-          usuario_id: Number(usuarioId || 1)
-        }
-      });
-    } catch (err) {
-      const result = await pool.query(
-        'INSERT INTO projetos (nome, descricao, usuario_id) VALUES ($1, $2, $3) RETURNING *',
-        [nome, descricao || null, Number(usuarioId || 1)]
-      );
-      return result.rows[0];
+  // Dia 8, exercício: create com data
+  adicionar: ({ nome, descricao, usuarioId }) => prisma.projetos.create({
+    data: {
+      nome,
+      descricao: descricao || null,
+      usuario_id: Number(usuarioId || 1)
     }
-  },
+  }),
 
-  atualizar: async (id, dados) => {
-    const { nome, descricao } = dados;
+  // Dia 8, exercício: update; P2025 vira null (controller responde 404)
+  atualizar: async (id, { nome, descricao }) => {
+    const data = {};
+    if (nome !== undefined) data.nome = nome;
+    if (descricao !== undefined) data.descricao = descricao;
+
     try {
       return await prisma.projetos.update({
         where: { id: Number(id) },
-        data: {
-          ...(nome !== undefined && { nome }),
-          ...(descricao !== undefined && { descricao })
-        }
+        data
       });
-    } catch (err) {
-      const result = await pool.query(
-        `UPDATE projetos 
-         SET nome = COALESCE($1, nome), descricao = COALESCE($2, descricao) 
-         WHERE id = $3 
-         RETURNING *`,
-        [nome || null, descricao || null, Number(id)]
-      );
-      return result.rows[0] || null;
+    } catch (erro) {
+      if (erro.code === 'P2025') return null;
+      throw erro;
     }
   },
 
+  // Dia 8, exercício: delete; P2025 vira null (controller responde 404)
   remover: async (id) => {
     try {
-      await prisma.projetos.delete({
+      return await prisma.projetos.delete({
         where: { id: Number(id) }
       });
-      return true;
-    } catch (err) {
-      const result = await pool.query('DELETE FROM projetos WHERE id = $1 RETURNING *', [Number(id)]);
-      return result.rowCount > 0;
+    } catch (erro) {
+      if (erro.code === 'P2025') return null;
+      throw erro;
     }
   }
 };

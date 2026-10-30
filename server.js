@@ -1,9 +1,11 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const swaggerUi = require('swagger-ui-express');
 const db = require('./src/database/db');
 const criarErro = require('./src/utils/criarErro');
 const tratarErros = require('./src/middlewares/erro.middleware');
+const openapi = require('./src/docs/openapi');
 
 // Rotas da aplicação
 const tarefasRoutes = require('./src/routes/tarefas.routes');
@@ -30,6 +32,9 @@ app.get('/', (req, res) => {
   res.json({ mensagem: 'API TaskFlow online' });
 });
 
+// Documentação Swagger (Dia 9): ANTES das rotas e SEM o autenticar
+app.use('/docs', swaggerUi.serve, swaggerUi.setup(openapi));
+
 // Registro das rotas principais
 app.use('/auth', authRoutes);
 app.use('/tarefas', tarefasRoutes);
@@ -37,7 +42,7 @@ app.use('/usuarios', usuariosRoutes);
 app.use('/projetos', projetosRoutes);
 app.use('/prioridades', prioridadesRoutes);
 
-// Rota 404: nenhuma rota atendeu (Slide 22)
+// Rota 404: nenhuma rota atendeu (Slide 22). Fica depois de todas as rotas
 app.use((req, res, next) => {
   const rota = `${req.method} ${req.url}`;
   return next(criarErro(404, `Rota ${rota} não encontrada`));

@@ -1,10 +1,14 @@
 const express = require('express');
 const controller = require('../controllers/tarefas.controller');
 const validar = require('../middlewares/validar.middleware');
+const autenticar = require('../middlewares/autenticar');
 const schemas = require('../schemas/schemas');
 
 const router = express.Router();
 const idValido = validar(schemas.id, 'params');
+
+// Todas as rotas de tarefas exigem o token JWT (Dia 9: Swagger mostra 401 sem token)
+router.use(autenticar);
 
 // Listar com validação opcional de query (Desafio Slide 24)
 router.get('/', validar(schemas.filtroTarefas, 'query'), controller.listar);

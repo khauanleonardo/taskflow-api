@@ -20,13 +20,13 @@ async function login(req, res, next) {
 
     const emailLimpo = String(email).trim().toLowerCase();
 
-    // 1. Busca no Neon
-    let usuarioEncontrado = await usuarioModel.buscarPorEmail(emailLimpo);
+    // 1. Busca no banco (Prisma)
+    let usuarioEncontrado = await usuarioModel.buscarPorEmailComSenha(emailLimpo);
 
     // 2. Fallback caso necessário
     if (!usuarioEncontrado) {
       usuarioEncontrado = usuariosFallback.find(
-        (u) => u.email.toLowerCase() === emailLimpo || (emailLimpo === 'admin' && u.email === 'admin@taskflow.com')
+        (u) => u.email.toLowerCase() === emailLimpo
       );
     }
 
@@ -35,8 +35,7 @@ async function login(req, res, next) {
     }
 
     // 3. Validação de senha
-    const senhaCorreta = usuarioEncontrado.senha;
-    if (String(senhaCorreta) !== String(senhaInformada)) {
+    if (String(usuarioEncontrado.senha) !== String(senhaInformada)) {
       return next(criarErro(401, 'Credenciais inválidas'));
     }
 

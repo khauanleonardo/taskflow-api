@@ -49,16 +49,17 @@ async function atualizar(req, res, next) {
   }
 }
 
+// Slide Dia 9: a resposta do DELETE é { mensagem, tarefa }
 async function remover(req, res, next) {
   try {
     const id = Number(req.params.id);
-    const removida = await Tarefa.remover(id);
+    const tarefa = await Tarefa.remover(id);
 
-    if (!removida) {
+    if (!tarefa) {
       return next(criarErro(404, 'Tarefa não encontrada'));
     }
 
-    return res.status(204).send();
+    return res.status(200).json({ mensagem: 'Tarefa removida', tarefa });
   } catch (err) {
     return next(err);
   }

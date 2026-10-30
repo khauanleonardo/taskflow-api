@@ -1,75 +1,73 @@
-const pool = require('../database/db');
+const prisma = require('../database/prisma');
 
-function formatarUsuario(u) {
-  if (!u) return null;
-  return {
-    id: u.id,
-    nome: u.nome,
-    email: u.email,
-    criado_em: u.criado_em
-  };
-}
+// Nunca devolvemos senha_hash: todo select usa estes campos (Dia 8, desafio)
+const camposPublicos = { id: true, nome: true, email: true, criado_em: true };
 
 const usuarioModel = {
-  buscarPorEmail: async (email) => {
-    const result = await pool.query(
-      'SELECT * FROM usuarios WHERE LOWER(email) = LOWER($1)',
-      [email]
-    );
-    if (result.rows.length === 0) return null;
-    const u = result.rows[0];
+  // Usado só no login: precisa da senha para conferir
+  buscarPorEmailComSenha: async (email) => {
+    const u = await prisma.usuarios.findFirst({
+      where: { email: { equals: email, mode: 'insensitive' } }
+    });
+    if (!u) return null;
     return {
-      ...formatarUsuario(u),
-      senha: u.senha_hash || u.senha
+      id: u.id,
+      nome: u.nome,
+      email: u.email,
+      senha: u.senha_hash
     };
   },
 
-  buscarPorId: async (id) => {
-    const result = await pool.query(
-      'SELECT id, nome, email, criado_em FROM usuarios WHERE id = $1',
-      [id]
-    );
-    return result.rows.length > 0 ? formatarUsuario(result.rows[0]) : null;
-  },
+  buscarPorId: (id) => prisma.usuarios.findUnique({
+    where: { id: Number(id) },
+    select: camposPublicos
+  }),
 
-  listarTodos: async () => {
-    const result = await pool.query(
-      'SELECT id, nome, email, criado_em FROM usuarios ORDER BY id'
-    );
-    return result.rows.map(formatarUsuario);
-  },
+  listar: () => prisma.usuarios.findMany({
+    select: camposPublicos,
+    orderBy: { id: 'asc' }
+  }),
 
-  listar: async () => {
-    return usuarioModel.listarTodos();
-  },
+  // Dia 8, exercício: create sem devolver a senha. P2002 (e-mail repetido) é traduzido pelo tratarErros
+  criar: ({ nome, email, senha }) => prisma.usuarios.create({
+    data: {
+      nome,
+      email: String(email).trim().toLowerCase(),
+      senha_hash: senha
+    },
+    select: camposPublicos
+  }),
 
-  criar: async ({ nome, email, senha }) => {
-    const result = await pool.query(
-      'INSERT INTO usuarios (nome, email, senha_hash) VALUES ($1, $2, $3) RETURNING id, nome, email, criado_em',
-      [nome, email, senha]
-    );
-    return formatarUsuario(result.rows[0]);
-  },
-
+  // Dia 8, exercício: update só com os campos enviados
   atualizar: async (id, { nome, email, senha }) => {
-    const result = await pool.query(
-      `UPDATE usuarios 
-       SET nome = COALESCE($1, nome),
-           email = COALESCE($2, email),
-           senha_hash = COALESCE($3, senha_hash)
-       WHERE id = $4
-       RETURNING id, nome, email, criado_em`,
-      [nome || null, email || null, senha || null, id]
-    );
-    return result.rows.length > 0 ? formatarUsuario(result.rows[0]) : null;
+    const data = {};
+    if (nome !== undefined) data.nome = nome;
+    if (email !== undefined) data.email = String(email).trim().toLowerCase();
+    if (senha !== undefined) data.senha_hash = senha;
+
+    try {
+      return await prisma.usuarios.update({
+        where: { id: Number(id) },
+        data,
+        select: camposPublicos
+      });
+    } catch (erro) {
+      if (erro.code === 'P2025') return null;
+      throw erro;
+    }
   },
 
+  // Dia 8, exercício: delete; P2025 vira null (controller responde 404)
   remover: async (id) => {
-    const result = await pool.query(
-      'DELETE FROM usuarios WHERE id = $1 RETURNING id',
-      [id]
-    );
-    return result.rows.length > 0;
+    try {
+      return await prisma.usuarios.delete({
+        where: { id: Number(id) },
+        select: camposPublicos
+      });
+    } catch (erro) {
+      if (erro.code === 'P2025') return null;
+      throw erro;
+    }
   }
 };
 

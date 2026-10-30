@@ -25,13 +25,10 @@ const usuariosController = {
     }
   },
 
+  // E-mail repetido não é checado aqui: o banco recusa (P2002) e o tratarErros responde 409
   async criar(req, res, next) {
     try {
       const { nome, email, senha } = req.body;
-      const existente = await usuarioModel.buscarPorEmail(email);
-      if (existente) {
-        return next(criarErro(400, 'E-mail já cadastrado no sistema'));
-      }
       const novo = await usuarioModel.criar({ nome, email, senha });
       return res.status(201).json(novo);
     } catch (err) {
@@ -55,10 +52,13 @@ const usuariosController = {
   async remover(req, res, next) {
     try {
       const id = Number(req.params.id);
+
+      // ON DELETE CASCADE apagaria as tarefas do usuário em silêncio: conferimos antes
       const tarefasDoUsuario = await Tarefa.listar({ usuarioId: id });
-      if (tarefasDoUsuario && tarefasDoUsuario.length > 0) {
-        return next(criarErro(400, 'Não é possível excluir usuário com tarefas vinculadas'));
+      if (tarefasDoUsuario.length > 0) {
+        return next(criarErro(409, 'Não é possível excluir usuário com tarefas vinculadas'));
       }
+
       const removido = await usuarioModel.remover(id);
       if (!removido) {
         return next(criarErro(404, 'Usuário não encontrado'));

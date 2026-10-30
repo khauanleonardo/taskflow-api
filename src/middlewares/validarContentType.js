@@ -1,6 +1,7 @@
-// src/middlewares/validarContentType.js
+const criarErro = require('../utils/criarErro');
+
+// Mesmo formato de erro do resto da API (Dia 9, slide 25)
 module.exports = function validarContentType(req, res, next) {
-  // Apenas métodos com corpo enviado precisam de verificação
   if (['POST', 'PUT', 'PATCH'].includes(req.method)) {
     const contentType = req.headers['content-type'];
     if (
@@ -8,9 +9,7 @@ module.exports = function validarContentType(req, res, next) {
       Object.keys(req.body).length > 0 &&
       (!contentType || !contentType.includes('application/json'))
     ) {
-      return res.status(415).json({
-        erro: 'Content-Type deve ser obrigatoriamente application/json'
-      });
+      return next(criarErro(415, 'Content-Type inválido. Use: application/json'));
     }
   }
   next();
