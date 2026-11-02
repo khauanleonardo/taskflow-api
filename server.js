@@ -1,3 +1,7 @@
+const dns = require('node:dns');
+// Força resolução IPv4 primeiro, evitando timeouts em conexões IPv6 locais/roteadores
+dns.setDefaultResultOrder('ipv4first');
+
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -32,8 +36,15 @@ app.get('/', (req, res) => {
   res.json({ mensagem: 'API TaskFlow online' });
 });
 
-// Documentação Swagger (Dia 9): ANTES das rotas e SEM o autenticar
-app.use('/docs', swaggerUi.serve, swaggerUi.setup(openapi));
+// Documentação Swagger com assets via CDN jsDelivr (funciona na Vercel e local - Capítulo 11.2)
+const SWAGGER_CDN = 'https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.17.14';
+app.use('/docs', swaggerUi.serve, swaggerUi.setup(openapi, {
+  customCssUrl: `${SWAGGER_CDN}/swagger-ui.css`,
+  customJs: [
+    `${SWAGGER_CDN}/swagger-ui-bundle.js`,
+    `${SWAGGER_CDN}/swagger-ui-standalone-preset.js`,
+  ],
+}));
 
 // Registro das rotas principais
 app.use('/auth', authRoutes);
@@ -51,14 +62,19 @@ app.use((req, res, next) => {
 // Middleware central de tratamento de erros (SEMPRE POR ÚLTIMO)
 app.use(tratarErros);
 
-// Teste de conexão com o banco e inicialização
+// Teste de conexão e inicialização
+app.listen(PORT, () => {
+  console.log(`🚀 TaskFlow API rodando em http://localhost:${PORT}`);
+  console.log(`📖 Documentação Swagger em http://localhost:${PORT}/docs`);
+});
+
+// Teste opcional assíncrono do banco sem bloquear a inicialização
 db.query('SELECT NOW()')
   .then((res) => {
-    console.log(`🚀 TaskFlow API rodando em http://localhost:${PORT}`);
-    console.log(`Banco conectado: ${res.rows[0].now.toISOString()}`);
+    console.log(`Banco conectado com sucesso: ${res.rows[0].now.toISOString()}`);
   })
   .catch((err) => {
-    console.error('❌ Erro ao conectar no banco PostgreSQL:', err.message);
+    console.warn('Aviso na conexão direta pg:', err.message);
   });
 
-app.listen(PORT);
+module.exports = app;

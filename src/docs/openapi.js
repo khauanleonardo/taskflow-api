@@ -1,5 +1,5 @@
-// Documento OpenAPI 3.0.3 do TaskFlow (Dia 9).
-// Cada recurso tem seu arquivo .docs.js; aqui juntamos tudo com spread.
+// Documento OpenAPI 3.0.3 do TaskFlow (Dia 9)
+// Junta de forma modular a documentação de cada recurso
 const comum = require('./comum');
 const auth = require('./auth.docs');
 const tarefas = require('./tarefas.docs');
@@ -12,14 +12,12 @@ module.exports = {
   info: {
     title: 'TaskFlow API',
     version: '1.0.0',
-    description: 'API do TaskFlow · SENAI CTGAS-ER. Para rotas protegidas, clique em Authorize e cole só o token JWT (sem a palavra Bearer).'
+    description: 'API do TaskFlow · SENAI CTGAS-ER. Para testar rotas protegidas, faça login em POST /auth/login, clique no botão Authorize no topo e cole o token JWT gerado.'
   },
+  // O uso da URL relativa '/' resolve automaticamente tanto localhost quanto Vercel (UC14 Cap. 11.3)
   servers: [
-    { url: 'http://localhost:3001', description: 'Local' },
-    // Troque pela URL da sua API na Vercel
-    { url: 'https://SEU-PROJETO.vercel.app', description: 'Vercel' }
+    { url: '/', description: 'Este servidor' }
   ],
-  // Vale para todas as rotas. As que não pedem token têm security: [] no próprio .docs.js
   security: [{ bearerAuth: [] }],
   tags: [
     { name: 'Auth' },
@@ -43,7 +41,6 @@ module.exports = {
         bearerFormat: 'JWT'
       }
     },
-    // Nomes únicos por recurso: dois schemas com o mesmo nome se sobrescrevem
     schemas: {
       ...comum.schemas,
       ...auth.schemas,

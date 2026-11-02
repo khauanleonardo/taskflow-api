@@ -49,17 +49,17 @@ async function atualizar(req, res, next) {
   }
 }
 
-// Slide Dia 9: a resposta do DELETE é { mensagem, tarefa }
+// Teste 3: Status 200 devolvendo os dados da tarefa excluída
 async function remover(req, res, next) {
   try {
     const id = Number(req.params.id);
-    const tarefa = await Tarefa.remover(id);
+    const removida = await Tarefa.remover(id);
 
-    if (!tarefa) {
+    if (!removida) {
       return next(criarErro(404, 'Tarefa não encontrada'));
     }
 
-    return res.status(200).json({ mensagem: 'Tarefa removida', tarefa });
+    return res.status(200).json({ mensagem: 'Tarefa removida com sucesso', tarefa: removida });
   } catch (err) {
     return next(err);
   }

@@ -1,4 +1,4 @@
-// Peças usadas por todos os recursos (Dia 9, slide 17 e 19)
+// Peças compartilhadas por todos os recursos OpenAPI (UC14 - Dia 9)
 
 const schemas = {
   Erro: {
@@ -19,14 +19,24 @@ const schemas = {
   }
 };
 
-// Atalho: content JSON apontando para um schema de components
+// Atalho para resposta com objeto único
 const json = (nome) => ({
   'application/json': {
     schema: { $ref: `#/components/schemas/${nome}` }
   }
 });
 
-// Parâmetro {id} da URL: igual em tarefas, projetos, usuários e prioridades
+// Atalho para resposta com array/lista de objetos (UC14 Cap. 8.5)
+const jsonLista = (nome) => ({
+  'application/json': {
+    schema: {
+      type: 'array',
+      items: { $ref: `#/components/schemas/${nome}` }
+    }
+  }
+});
+
+// Parâmetro {id} padrão para a URL
 const parametroId = {
   name: 'id',
   in: 'path',
@@ -35,4 +45,4 @@ const parametroId = {
   schema: { type: 'integer', example: 1 }
 };
 
-module.exports = { json, parametroId, schemas };
+module.exports = { json, jsonLista, parametroId, schemas };
