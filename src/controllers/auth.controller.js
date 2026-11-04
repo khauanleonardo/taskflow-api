@@ -20,10 +20,15 @@ async function login(req, res, next) {
 
     const emailLimpo = String(email).trim().toLowerCase();
 
-    // 1. Busca no banco (Prisma)
-    let usuarioEncontrado = await usuarioModel.buscarPorEmailComSenha(emailLimpo);
+    // 1. Busca no banco via Prisma (com proteção caso o Neon demore a acordar)
+    let usuarioEncontrado = null;
+    try {
+      usuarioEncontrado = await usuarioModel.buscarPorEmailComSenha(emailLimpo);
+    } catch (dbErr) {
+      console.warn('Aviso ao consultar usuário no banco (Prisma/Neon):', dbErr.message);
+    }
 
-    // 2. Fallback caso necessário
+    // 2. Fallback de demonstração
     if (!usuarioEncontrado) {
       usuarioEncontrado = usuariosFallback.find(
         (u) => u.email.toLowerCase() === emailLimpo
