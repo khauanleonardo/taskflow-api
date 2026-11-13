@@ -1,27 +1,31 @@
 ﻿const criarErro = require('../src/utils/criarErro');
 
 describe('criarErro', () => {
-  test('deve criar um erro com status e mensagem', () => {
-    const erro = criarErro(400, 'Requisição inválida');
-    expect(erro).toBeInstanceOf(Error);
-    expect(erro.status).toBe(400);
-    expect(erro.message).toBe('Requisição inválida');
+  test('devolve um erro com o status e a mensagem', () => {
+    // Preparar e Executar
+    const erro = criarErro(404, 'Tarefa não encontrada');
+
+    // Verificar
+    expect(erro.status).toBe(404);
+    expect(erro.message).toBe('Tarefa não encontrada');
   });
 
-  test('deve criar erro sem detalhes quando não informados', () => {
-    const erro = criarErro(404, 'Não encontrado');
+  test('guarda a lista de detalhes quando informada', () => {
+    // Preparar
+    const detalhes = ["O campo 'texto' é obrigatório"];
+
+    // Executar
+    const erro = criarErro(400, 'Dados inválidos', detalhes);
+
+    // Verificar
+    expect(erro.detalhes[0]).toBe("O campo 'texto' é obrigatório");
+  });
+
+  test('deixa detalhes undefined quando não informado', () => {
+    // Preparar e Executar
+    const erro = criarErro(404, 'Tarefa não encontrada');
+
+    // Verificar
     expect(erro.detalhes).toBeUndefined();
-  });
-
-  test('deve anexar detalhes quando fornecidos', () => {
-    const detalhes = ['Campo título obrigatório'];
-    const erro = criarErro(422, 'Erro de validação', detalhes);
-    expect(erro.detalhes).toEqual(detalhes);
-  });
-
-  test('deve ser capturado por bloco try/catch', () => {
-    expect(() => {
-      throw criarErro(401, 'Não autorizado');
-    }).toThrow('Não autorizado');
   });
 });

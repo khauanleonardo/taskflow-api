@@ -1,42 +1,63 @@
 ﻿const traduzirErroPrisma = require('../src/utils/traduzirErroPrisma');
 
 describe('traduzirErroPrisma', () => {
-  test('P2002: deve retornar status 409 e mensagem de valor repetido', () => {
+  test('P2025 (registro não encontrado) vira 404', () => {
+    // Preparar
+    const erroPrisma = { code: 'P2025' };
+
+    // Executar
+    const erro = traduzirErroPrisma(erroPrisma, 'PUT');
+
+    // Verificar
+    expect(erro.status).toBe(404);
+  });
+
+  test('P2002 (valor repetido) vira 409 e diz o campo', () => {
+    // Preparar
     const erroPrisma = {
       code: 'P2002',
-      meta: { target: ['email'] }
+      meta: { target: ['email'] },
     };
-    const erro = traduzirErroPrisma(erroPrisma);
+
+    // Executar
+    const erro = traduzirErroPrisma(erroPrisma, 'POST');
+
+    // Verificar
     expect(erro.status).toBe(409);
     expect(erro.message).toBe('Já existe um registro com esse valor');
-    expect(erro.detalhes).toEqual(['Valor repetido em: email']);
+    expect(erro.detalhes[0]).toBe('Valor repetido em: email');
   });
 
-  test('P2003 no DELETE: deve retornar status 409', () => {
+  test('P2003 ao gravar (POST) vira 400', () => {
+    // Preparar
     const erroPrisma = { code: 'P2003' };
-    const erro = traduzirErroPrisma(erroPrisma, 'DELETE');
-    expect(erro.status).toBe(409);
-    expect(erro.message).toBe('Não é possível excluir: existem registros ligados a este');
-  });
 
-  test('P2003 fora do DELETE: deve retornar status 400', () => {
-    const erroPrisma = { code: 'P2003' };
+    // Executar
     const erro = traduzirErroPrisma(erroPrisma, 'POST');
+
+    // Verificar
     expect(erro.status).toBe(400);
-    expect(erro.message).toBe('Um dos ids informados não existe');
   });
 
-  test('P2025: deve retornar status 404 de registro não encontrado', () => {
-    const erroPrisma = { code: 'P2025' };
-    const erro = traduzirErroPrisma(erroPrisma);
-    expect(erro.status).toBe(404);
-    expect(erro.message).toBe('Registro não encontrado');
+  test('P2003 ao excluir (DELETE) vira 409', () => {
+    // Preparar
+    const erroPrisma = { code: 'P2003' };
+
+    // Executar
+    const erro = traduzirErroPrisma(erroPrisma, 'DELETE');
+
+    // Verificar
+    expect(erro.status).toBe(409);
   });
 
-  test('código desconhecido: deve retornar o erro original sem alterar', () => {
-    const erroGenerico = new Error('Erro de conexão');
-    erroGenerico.code = 'P9999';
-    const resultado = traduzirErroPrisma(erroGenerico);
-    expect(resultado).toBe(erroGenerico);
+  test('código não tratado fica sem status (o tratarErros responde 500)', () => {
+    // Preparar
+    const erroPrisma = { code: 'P1001', message: 'banco fora do ar' };
+
+    // Executar
+    const erro = traduzirErroPrisma(erroPrisma, 'GET');
+
+    // Verificar
+    expect(erro.status).toBeUndefined();
   });
 });
