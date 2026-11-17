@@ -1,248 +1,131 @@
-const prisma = require('../database/prisma');
-const pool = require('../database/db');
+const db = require('../database/db');
 
-// Chave automática: se o Prisma oscilar no computador local, não faz o usuário esperar
-let prismaOffline = false;
-
-async function executarComFallback(fnPrisma, fnPg) {
-  if (!prismaOffline) {
-    try {
-      const timeout = new Promise((_, rej) =>
-        setTimeout(() => rej(new Error('Prisma timeout')), 350)
-      );
-      return await Promise.race([fnPrisma(), timeout]);
-    } catch (e) {
-      prismaOffline = true;
-      // Tenta reabilitar o Prisma após 1 minuto
-      setTimeout(() => { prismaOffline = false; }, 60000);
-    }
-  }
-  return await fnPg();
-}
-
-const mapaIdParaTexto = { 1: 'baixa', 2: 'media', 3: 'alta', 4: 'urgente' };
-const mapaTextoParaId = { baixa: 1, baixo: 1, media: 2, medio: 2, média: 2, médio: 2, alta: 3, alto: 3, urgente: 4 };
-
-const incluirNomes = {
-  projeto: { select: { nome: true } },
-  usuario: { select: { nome: true } },
-  refPrioridade: { select: { nome: true, descricao: true, cor: true } }
+const colunaValida = new Set(['afazer', 'andamento', 'concluido']);
+const normalizarColuna = (value) => {
+  const v = String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim().replace(/\s+/g, '');
+  const map = { 'a fazer': 'afazer', afazer: 'afazer', todo: 'afazer', backlog: 'afazer', 'em andamento': 'andamento', andamento: 'andamento', doing: 'andamento', 'emfoco': 'andamento', concluido: 'concluido', done: 'concluido' };
+  return map[v] || (colunaValida.has(v) ? v : null);
 };
+const normalizarPrioridade = (value) => String(value || 'media').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
 
-function formatarTarefa(tarefa) {
-  if (!tarefa) return null;
-  const { projeto, usuario, refPrioridade, ...dados } = tarefa;
-
-  const idPrioridade = dados.idprioridade || 2;
-  const corPadrao = idPrioridade === 4 ? '#A855F7' : idPrioridade === 3 ? '#FF5065' : idPrioridade === 1 ? '#41D686' : '#F6C330';
-
+function formatarTarefa(row) {
+  if (!row) return null;
   return {
-    id: dados.id,
-    texto: dados.texto,
-    titulo: dados.texto,
-    coluna: dados.coluna,
-    status: dados.coluna,
-    ordem: dados.ordem,
-    descricao: dados.descricao || '',
-    usuario_id: dados.usuario_id,
-    usuario: usuario?.nome || dados.usuario_nome,
-    projeto_id: dados.projeto_id,
-    projeto: projeto?.nome || dados.projeto_nome,
-    idprioridade: idPrioridade,
-    prioridade: refPrioridade?.descricao || refPrioridade?.nome || dados.prioridade_descricao || mapaIdParaTexto[idPrioridade] || 'media',
-    prioridade_rotulo: refPrioridade?.nome || dados.prioridade_nome || 'Média',
-    prioridade_cor: refPrioridade?.cor || dados.prioridade_cor || corPadrao,
-    criado_em: dados.criado_em,
-    iniciada_em: dados.iniciada_em,
-    concluida_em: dados.concluida_em
+    id: row.id,
+    texto: row.texto,
+    titulo: row.texto,
+    coluna: normalizarColuna(row.coluna) || row.coluna,
+    status: normalizarColuna(row.coluna) || row.coluna,
+    ordem: row.ordem || 0,
+    usuario_id: row.usuario_id,
+    usuario_nome: row.usuario_nome || null,
+    projeto_id: row.projeto_id,
+    projeto_nome: row.projeto_nome || null,
+    idprioridade: row.idprioridade,
+    prioridade: normalizarPrioridade(row.prioridade_nome || row.prioridade),
+    prioridade_cor: row.prioridade_cor || null,
+    descricao: row.descricao || '',
+    criado_em: row.criado_em,
+    concluida_em: row.concluida_em || null,
+    cidade_uf: row.cidade_uf || null,
+    cep: row.cep || null,
+    cidade: row.cidade || null,
+    uf: row.uf || null,
+    bairro: row.bairro || null,
+    rua: row.rua || null,
   };
 }
 
-function prioridadeParaId(dados) {
-  if (dados.idprioridade !== undefined && dados.idprioridade !== null) return Number(dados.idprioridade) || 2;
-  if (dados.prioridade) return mapaTextoParaId[String(dados.prioridade).toLowerCase()] || 2;
-  return 2;
-}
+const selectTarefas = `SELECT t.*, p.nome AS prioridade_nome, p.cor AS prioridade_cor,
+  u.nome AS usuario_nome, pr.nome AS projeto_nome
+  FROM tarefas t
+  LEFT JOIN prioridades p ON p.id = t.idprioridade
+  LEFT JOIN usuarios u ON u.id = t.usuario_id
+  LEFT JOIN projetos pr ON pr.id = t.projeto_id`;
 
 class Tarefa {
   static async listar(filtros = {}) {
-    return executarComFallback(
-      async () => {
-        const where = {};
-        const usuarioId = filtros.usuarioId || filtros.usuario_id;
-        if (usuarioId) where.usuario_id = Number(usuarioId);
-        const coluna = filtros.coluna || filtros.status;
-        if (coluna) where.coluna = coluna;
-
-        const tarefas = await prisma.tarefas.findMany({
-          where,
-          orderBy: { id: 'asc' },
-          include: incluirNomes
-        });
-        return tarefas.map(formatarTarefa);
-      },
-      async () => {
-        const sql = `
-          SELECT t.*, p.nome AS projeto_nome, u.nome AS usuario_nome,
-                 pr.nome AS prioridade_nome, pr.descricao AS prioridade_descricao, pr.cor AS prioridade_cor
-          FROM tarefas t
-          LEFT JOIN projetos p ON p.id = t.projeto_id
-          LEFT JOIN usuarios u ON u.id = t.usuario_id
-          LEFT JOIN prioridades pr ON pr.id = t.idprioridade
-          ORDER BY t.id ASC
-        `;
-        const res = await pool.query(sql);
-        return res.rows.map(formatarTarefa);
-      }
-    );
+    const conditions = [];
+    const values = [];
+    const userId = filtros.usuarioId || filtros.usuario_id;
+    if (userId) { values.push(Number(userId)); conditions.push(`t.usuario_id = $${values.length}`); }
+    const col = filtros.coluna || filtros.status;
+    if (col) {
+      const normalized = normalizarColuna(col);
+      if (!normalized) return [];
+      if (normalized === 'concluido') conditions.push(`lower(t.coluna) IN ('concluido', 'done')`);
+      else { values.push(normalized); conditions.push(`lower(t.coluna) = $${values.length}`); }
+    }
+    const priorityId = filtros.idprioridade || filtros.prioridadeId;
+    const priorityName = filtros.prioridade;
+    if (priorityId) { values.push(Number(priorityId)); conditions.push(`t.idprioridade = $${values.length}`); }
+    else if (priorityName) { values.push(normalizarPrioridade(priorityName)); conditions.push(`lower(coalesce(p.nome, t.prioridade)) = $${values.length}`); }
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    const result = await db.query(`${selectTarefas} ${where} ORDER BY t.ordem ASC, t.id ASC LIMIT 500`, values);
+    return result.rows.map(formatarTarefa);
   }
 
   static async buscarPorId(id) {
-    const idNum = Number(id);
-    return executarComFallback(
-      async () => {
-        const t = await prisma.tarefas.findUnique({ where: { id: idNum }, include: incluirNomes });
-        return formatarTarefa(t);
-      },
-      async () => {
-        const sql = `
-          SELECT t.*, p.nome AS projeto_nome, u.nome AS usuario_nome,
-                 pr.nome AS prioridade_nome, pr.descricao AS prioridade_descricao, pr.cor AS prioridade_cor
-          FROM tarefas t
-          LEFT JOIN projetos p ON p.id = t.projeto_id
-          LEFT JOIN usuarios u ON u.id = t.usuario_id
-          LEFT JOIN prioridades pr ON pr.id = t.idprioridade
-          WHERE t.id = $1
-        `;
-        const res = await pool.query(sql, [idNum]);
-        return formatarTarefa(res.rows[0]);
-      }
-    );
+    const result = await db.query(`${selectTarefas} WHERE t.id = $1`, [id]);
+    return result.rows.length ? formatarTarefa(result.rows[0]) : null;
   }
 
-  static async criar(dados) {
-    const texto = dados.texto || dados.titulo || 'Nova Tarefa';
-    const coluna = dados.coluna || dados.status || 'afazer';
-    const idPrioridade = prioridadeParaId(dados);
-    const usuarioId = Number(dados.usuario_id || dados.usuarioId || 1);
-    const projetoId = Number(dados.projeto_id || dados.projetoId || 1);
-    const descricao = dados.descricao || '';
-    const ordem = dados.ordem !== undefined ? Number(dados.ordem) : 0;
-
-    const data = {
-      texto, coluna, descricao, ordem,
-      usuario_id: usuarioId, projeto_id: projetoId, idprioridade: idPrioridade,
-      prioridade: mapaIdParaTexto[idPrioridade] || 'media'
-    };
-
-    if (coluna === 'andamento') data.iniciada_em = new Date();
-    else if (coluna === 'concluido') { data.iniciada_em = new Date(); data.concluida_em = new Date(); }
-
-    return executarComFallback(
-      async () => {
-        const nova = await prisma.tarefas.create({ data, include: incluirNomes });
-        return formatarTarefa(nova);
-      },
-      async () => {
-        const sql = `
-          INSERT INTO tarefas (texto, coluna, descricao, ordem, usuario_id, projeto_id, idprioridade, prioridade, iniciada_em, concluida_em)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-          RETURNING *
-        `;
-        const res = await pool.query(sql, [
-          data.texto, data.coluna, data.descricao, data.ordem,
-          data.usuario_id, data.projeto_id, data.idprioridade, data.prioridade,
-          data.iniciada_em || null, data.concluida_em || null
-        ]);
-        return this.buscarPorId(res.rows[0].id);
-      }
-    );
+  static async criar(data) {
+    const texto = data.texto || data.titulo;
+    const coluna = normalizarColuna(data.coluna || data.status) || 'afazer';
+    const usuarioId = Number(data.usuario_id || data.usuarioId);
+    const projetoId = Number(data.projeto_id || data.projetoId);
+    const priorityId = Number(data.idprioridade || data.prioridade_id);
+    const priority = normalizarPrioridade(data.prioridade);
+    const descricao = data.descricao || '';
+    const result = await db.query(`
+      INSERT INTO tarefas (texto, coluna, usuario_id, projeto_id, idprioridade, prioridade, descricao, cep, cidade_uf, cidade, uf, bairro, rua)
+      VALUES ($1, $2, $3, $4, $5, COALESCE((SELECT lower(nome) FROM prioridades WHERE id = $5), $6), $7, $8, $9, $10, $11, $12, $13)
+      RETURNING *`, [texto, coluna, usuarioId, projetoId, priorityId, priority, descricao, data.cep || null, data.cidade_uf || null, data.cidade || null, data.uf || null, data.bairro || null, data.rua || null]);
+    return this.buscarPorId(result.rows[0].id);
   }
 
-  static async atualizar(id, dados) {
-    const idNum = Number(id);
-    const atual = await this.buscarPorId(idNum);
-    if (!atual) return null;
-
-    const data = {};
-    if (dados.texto !== undefined || dados.titulo !== undefined) data.texto = dados.texto || dados.titulo;
-    if (dados.descricao !== undefined) data.descricao = dados.descricao;
-    if (dados.coluna !== undefined || dados.status !== undefined) {
-      const novaColuna = dados.coluna || dados.status;
-      data.coluna = novaColuna;
-      if (novaColuna === 'concluido') data.concluida_em = new Date();
-      else data.concluida_em = null;
-      if (atual.coluna === 'afazer' && novaColuna === 'andamento') data.iniciada_em = new Date();
-      else if (atual.coluna === 'andamento' && novaColuna === 'afazer') data.iniciada_em = null;
+  static async atualizar(id, data) {
+    const sets = [];
+    const values = [];
+    const add = (field, value) => { values.push(value); sets.push(`${field} = $${values.length}`); };
+    if (data.texto !== undefined || data.titulo !== undefined) add('texto', data.texto ?? data.titulo);
+    if (data.coluna !== undefined || data.status !== undefined) {
+      const normalized = normalizarColuna(data.coluna ?? data.status);
+      if (!normalized) return null;
+      add('coluna', normalized);
+      if (normalized === 'concluido') sets.push('concluida_em = COALESCE(concluida_em, CURRENT_TIMESTAMP)');
+      else sets.push('concluida_em = NULL');
     }
-    if (dados.idprioridade !== undefined && dados.idprioridade !== null) {
-      data.idprioridade = Number(dados.idprioridade);
-      data.prioridade = mapaIdParaTexto[data.idprioridade] || 'media';
-    } else if (dados.prioridade !== undefined) {
-      data.idprioridade = mapaTextoParaId[String(dados.prioridade).toLowerCase()] || 2;
-      data.prioridade = mapaIdParaTexto[data.idprioridade] || 'media';
+    if (data.descricao !== undefined) add('descricao', data.descricao);
+    if (data.prioridade !== undefined && data.idprioridade === undefined) add('prioridade', normalizarPrioridade(data.prioridade));
+    if (data.idprioridade !== undefined || data.prioridade_id !== undefined) {
+      const pid = Number(data.idprioridade ?? data.prioridade_id);
+      add('idprioridade', pid);
+      values.push(pid); sets.push(`prioridade = (SELECT lower(nome) FROM prioridades WHERE id = $${values.length})`);
     }
-    if (dados.usuario_id !== undefined) data.usuario_id = Number(dados.usuario_id);
-    if (dados.projeto_id !== undefined) data.projeto_id = Number(dados.projeto_id);
-    if (dados.ordem !== undefined) data.ordem = Number(dados.ordem);
-
-    return executarComFallback(
-      async () => {
-        const atualizada = await prisma.tarefas.update({
-          where: { id: idNum },
-          data,
-          include: incluirNomes
-        });
-        return formatarTarefa(atualizada);
-      },
-      async () => {
-        const sql = `
-          UPDATE tarefas
-          SET texto = COALESCE($1, texto),
-              coluna = COALESCE($2, coluna),
-              descricao = COALESCE($3, descricao),
-              idprioridade = COALESCE($4, idprioridade),
-              prioridade = COALESCE($5, prioridade),
-              iniciada_em = $6,
-              concluida_em = $7
-          WHERE id = $8
-          RETURNING *
-        `;
-        await pool.query(sql, [
-          data.texto, data.coluna, data.descricao, data.idprioridade, data.prioridade,
-          data.iniciada_em !== undefined ? data.iniciada_em : atual.iniciada_em,
-          data.concluida_em !== undefined ? data.concluida_em : atual.concluida_em,
-          idNum
-        ]);
-        return this.buscarPorId(idNum);
-      }
-    );
+    if (data.usuario_id !== undefined || data.usuarioId !== undefined) add('usuario_id', Number(data.usuario_id ?? data.usuarioId));
+    if (data.projeto_id !== undefined || data.projetoId !== undefined) add('projeto_id', Number(data.projeto_id ?? data.projetoId));
+    for (const field of ['cep', 'cidade_uf', 'cidade', 'uf', 'bairro', 'rua']) if (data[field] !== undefined) add(field, data[field] || null);
+    if (data.cidadeUf !== undefined && data.cidade_uf === undefined) add('cidade_uf', data.cidadeUf || null);
+    if (!sets.length) return this.buscarPorId(id);
+    values.push(id);
+    const result = await db.query(`UPDATE tarefas SET ${sets.join(', ')} WHERE id = $${values.length} RETURNING id`, values);
+    return result.rows.length ? this.buscarPorId(id) : null;
   }
 
   static async remover(id) {
-    const idNum = Number(id);
-    const tarefa = await this.buscarPorId(idNum);
-    return executarComFallback(
-      async () => {
-        await prisma.tarefas.delete({ where: { id: idNum } });
-        return tarefa;
-      },
-      async () => {
-        await pool.query('DELETE FROM tarefas WHERE id = $1', [idNum]);
-        return tarefa;
-      }
-    );
+    const result = await db.query('DELETE FROM tarefas WHERE id = $1 RETURNING id', [id]);
+    return result.rowCount > 0;
   }
 
   static async avancar(id) {
-    const tarefa = await this.buscarPorId(id);
-    if (!tarefa) return null;
-    const proximaColuna = { afazer: 'andamento', andamento: 'concluido', concluido: 'concluido' }[tarefa.coluna] || 'afazer';
-    return await this.atualizar(id, { coluna: proximaColuna });
+    const task = await this.buscarPorId(id);
+    if (!task) return null;
+    const next = { afazer: 'andamento', andamento: 'concluido', concluido: 'concluido' }[task.coluna];
+    return this.atualizar(id, { coluna: next });
   }
 }
-
 Tarefa.adicionar = Tarefa.criar;
 Tarefa.excluir = Tarefa.remover;
-
 module.exports = Tarefa;

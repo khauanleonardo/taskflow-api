@@ -1,18 +1,22 @@
-const { Prisma } = require('@prisma/client');
-const traduzirErroPrisma = require('../utils/traduzirErroPrisma');
+﻿let traduzirErroPrisma;
+try {
+  traduzirErroPrisma = require('../utils/traduzirErroPrisma');
+} catch (e) {}
 
-// Middleware central de erros (UC14 - Dia 8, passo 6). Sempre o último do server.js
-function tratarErros(erro, req, res, next) {
-  if (res.headersSent) return next(erro);
+function tratarErros(erroOriginal, req, res, next) {
+  let erro = erroOriginal;
 
-  if (erro instanceof Prisma.PrismaClientKnownRequestError) {
-    erro = traduzirErroPrisma(erro, req.method);
+  // Traduz erros conhecidos do Prisma (P2002, P2003, P2025)
+  if (traduzirErroPrisma && erroOriginal && erroOriginal.code) {
+    erro = traduzirErroPrisma(erroOriginal, req?.method);
   }
 
   const status = erro.status || 500;
-  const mensagem = status === 500 ? 'Erro interno no servidor' : erro.message;
+  console.error('[ERRO]', req?.method, req?.url, erro.message);
 
-  console.error('[ERRO]', status, req.method, req.url, erro.message);
+  const mensagem = status === 500
+    ? 'Erro interno no servidor'
+    : erro.message;
 
   return res.status(status).json({
     erro: {
