@@ -1,6 +1,13 @@
 ﻿const request = require('supertest');
 const jwt = require('jsonwebtoken');
 const app = require('../app');
+const prisma = require('../src/database/prisma');
+const pool = require('../src/database/db');
+
+afterAll(async () => {
+  await prisma.$disconnect();
+  await pool.end();
+});
 
 const token = jwt.sign(
   { id: 1, nome: 'Teste' },
